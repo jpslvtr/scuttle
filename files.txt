@@ -9,6 +9,15 @@ class AppState extends ChangeNotifier {
 
   AppState({this.userId, this.command});
 
+  Future<void> initializeUser(String uid) async {
+    userId = uid;
+    // You can fetch additional user data from Firestore here if needed
+    // For example:
+    // DocumentSnapshot userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+    // command = userDoc.get('command');
+    notifyListeners();
+  }
+
   Future<void> createPost(String content) async {
     if (userId == null || command == null) return;
 
@@ -43,6 +52,13 @@ class AppState extends ChangeNotifier {
 
     notifyListeners();
   }
+
+  // You might want to add more methods here as your app grows, such as:
+  // - updateUserCommand(String newCommand)
+  // - createComment(String postId, String content)
+  // - sendMessage(String recipientId, String content)
+  // - getUserProfile()
+  // - updateUserProfile(Map<String, dynamic> data)
 }
 
 =================================================================
@@ -68,6 +84,11 @@ class HomeScreen extends StatelessWidget {
               Tab(text: 'Main Feed'),
               Tab(text: 'New Posts'),
             ],
+            indicatorColor: Colors.blue[800],
+            labelColor:
+                Colors.blue[800],
+            unselectedLabelColor:
+                Colors.grey,
           ),
         ),
         body: SafeArea(
@@ -398,16 +419,147 @@ File: app/lib/login_page.dart
 
 =================================================================
 
+File: app/lib/login_screen.dart
+
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'app_state.dart';
+import 'scuttlebutt_app.dart';
+
+class LoginScreen extends StatelessWidget {
+  const LoginScreen({Key? key}) : super(key: key);
+
+  Future<UserCredential> signInWithGoogle() async {
+    final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+    final GoogleSignInAuthentication? googleAuth =
+        await googleUser?.authentication;
+    final credential = GoogleAuthProvider.credential(
+      accessToken: googleAuth?.accessToken,
+      idToken: googleAuth?.idToken,
+    );
+    return await FirebaseAuth.instance.signInWithCredential(credential);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              'Scuttlebutt',
+              style: TextStyle(
+                fontSize: 48,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF8C1515),
+              ),
+            ),
+            SizedBox(height: 50),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                foregroundColor: Colors.black,
+                backgroundColor: Colors.white,
+                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+              ),
+              child: Text('Sign in with Google'),
+              onPressed: () async {
+                try {
+                  final UserCredential userCredential =
+                      await signInWithGoogle();
+                  final user = userCredential.user;
+                  if (user != null) {
+                    await FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(user.uid)
+                        .set({
+                      'email': user.email,
+                      'displayName': user.displayName,
+                      'createdAt': FieldValue.serverTimestamp(),
+                    }, SetOptions(merge: true));
+
+                    await Provider.of<AppState>(context, listen: false)
+                        .initializeUser(user.uid);
+                    Navigator.of(context).pushReplacement(
+                      MaterialPageRoute(
+                          builder: (context) => ScuttlebuttHomePage()),
+                    );
+                  }
+                } catch (e) {
+                  print('Error during sign in: $e');
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to sign in with Google')),
+                  );
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+=================================================================
+
 File: app/lib/main.dart
 
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
+import 'app_state.dart';
 import 'scuttlebutt_app.dart';
+import 'login_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-  runApp(ScuttlebuttApp());
+  runApp(MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return ChangeNotifierProvider(
+      create: (context) => AppState(),
+      child: MaterialApp(
+        title: 'Scuttlebutt',
+        theme: ThemeData(
+          primarySwatch: Colors.blue,
+          visualDensity: VisualDensity.adaptivePlatformDensity,
+        ),
+        home: AuthWrapper(),
+      ),
+    );
+  }
+}
+
+class AuthWrapper extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.active) {
+          User? user = snapshot.data;
+          if (user == null) {
+            return LoginScreen();
+          }
+          // Initialize AppState with the user ID
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            Provider.of<AppState>(context, listen: false)
+                .initializeUser(user.uid);
+          });
+          return ScuttlebuttHomePage();
+        }
+        return Scaffold(body: Center(child: CircularProgressIndicator()));
+      },
+    );
+  }
 }
 
 =================================================================
@@ -828,6 +980,7 @@ dependencies:
   firebase_auth: ^4.6.2
   cloud_firestore: ^4.8.0
   provider: ^6.0.2
+  google_sign_in: ^6.1.0
 
 dev_dependencies:
   flutter_test:

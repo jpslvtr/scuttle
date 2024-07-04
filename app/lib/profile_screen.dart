@@ -7,13 +7,8 @@ class ProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Profile'),
-      ),
-      body: Center(
-        child: Text('Profile screen - To be implemented'),
-      ),
+    return Center(
+      child: Text('Profile screen - To be implemented'),
     );
   }
 }

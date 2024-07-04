@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'post_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -9,29 +8,26 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Center(child: Text('Scuttlebutt')),
-          bottom: TabBar(
+      child: Column(
+        children: [
+          TabBar(
             tabs: [
               Tab(text: 'Main Feed'),
               Tab(text: 'New Posts'),
             ],
             indicatorColor: Colors.blue[800],
-            labelColor:
-                Colors.blue[800],
-            unselectedLabelColor:
-                Colors.grey,
+            labelColor: Colors.blue[800],
+            unselectedLabelColor: Colors.grey,
           ),
-        ),
-        body: SafeArea(
-          child: TabBarView(
-            children: [
-              PostFeed(sortBy: 'upvotes'),
-              PostFeed(sortBy: 'timestamp'),
-            ],
+          Expanded(
+            child: TabBarView(
+              children: [
+                PostFeed(sortBy: 'upvotes'),
+                PostFeed(sortBy: 'timestamp'),
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

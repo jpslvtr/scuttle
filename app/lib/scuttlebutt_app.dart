@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'home_screen.dart';
 import 'messages_screen.dart';
 import 'profile_screen.dart';
-import 'post_screen.dart';
+import 'settings_screen.dart';
 
 class ScuttlebuttApp extends StatelessWidget {
   const ScuttlebuttApp({Key? key}) : super(key: key);
@@ -11,8 +11,20 @@ class ScuttlebuttApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       theme: ThemeData(
-        primarySwatch: Colors.blue,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
+        useMaterial3: true,
+        colorSchemeSeed: const Color(0xFF8C1515),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF8C1515),
+          foregroundColor: Colors.white,
+        ),
+        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+          selectedItemColor: Color(0xFF8C1515),
+          unselectedItemColor: Colors.grey,
+        ),
+        floatingActionButtonTheme: const FloatingActionButtonThemeData(
+          backgroundColor: Color(0xFF8C1515),
+          foregroundColor: Colors.white,
+        ),
       ),
       home: ScuttlebuttHomePage(),
     );
@@ -29,11 +41,13 @@ class ScuttlebuttHomePage extends StatefulWidget {
 class _ScuttlebuttHomePageState extends State<ScuttlebuttHomePage> {
   int _selectedIndex = 0;
 
-  static const List<Widget> _widgetOptions = <Widget>[
-    HomeScreen(),
-    MessagesScreen(),
-    ProfileScreen(),
+  final List<Widget> _widgetOptions = <Widget>[
+    const HomeScreen(),
+    const MessagesScreen(),
+    const ProfileScreen(),
   ];
+
+  final List<String> _titles = ['Home', 'Messages', 'Profile'];
 
   void _onItemTapped(int index) {
     setState(() {
@@ -41,29 +55,39 @@ class _ScuttlebuttHomePageState extends State<ScuttlebuttHomePage> {
     });
   }
 
+  void _openSettings() {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        pageBuilder: (BuildContext context, _, __) {
+          return const SettingsScreen();
+        },
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          const begin = Offset(1.0, 0.0);
+          const end = Offset.zero;
+          const curve = Curves.easeInOut;
+          var tween =
+              Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+          var offsetAnimation = animation.drive(tween);
+          return SlideTransition(position: offsetAnimation, child: child);
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
-        children: [
-          _widgetOptions.elementAt(_selectedIndex),
-          if (_selectedIndex == 0)
-            Positioned(
-              right: 16,
-              bottom: 16,
-              child: FloatingActionButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => PostScreen()),
-                  );
-                },
-                child: Icon(Icons.add, color: Colors.white), // Changed to white
-                backgroundColor: Colors.blue[800],
-              ),
-            ),
+      appBar: AppBar(
+        title: Text(_titles[_selectedIndex]),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.menu),
+            onPressed: _openSettings,
+          ),
         ],
       ),
+      body: _widgetOptions.elementAt(_selectedIndex),
       bottomNavigationBar: BottomNavigationBar(
         items: const <BottomNavigationBarItem>[
           BottomNavigationBarItem(
@@ -80,13 +104,9 @@ class _ScuttlebuttHomePageState extends State<ScuttlebuttHomePage> {
           ),
         ],
         currentIndex: _selectedIndex,
-        selectedItemColor: Colors.blue[800], // Darker shade of blue
-        unselectedItemColor:
-            Colors.grey, // Slightly lighter shade for unselected items
         onTap: _onItemTapped,
+        showUnselectedLabels: true,
       ),
     );
   }
 }
-
-
