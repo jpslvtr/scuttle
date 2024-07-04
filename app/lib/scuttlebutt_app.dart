@@ -33,7 +33,6 @@ class _ScuttlebuttHomePageState extends State<ScuttlebuttHomePage> {
     HomeScreen(),
     MessagesScreen(),
     ProfileScreen(),
-    PostScreen(),
   ];
 
   void _onItemTapped(int index) {
@@ -45,8 +44,25 @@ class _ScuttlebuttHomePageState extends State<ScuttlebuttHomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
-        child: _widgetOptions.elementAt(_selectedIndex),
+      body: Stack(
+        children: [
+          _widgetOptions.elementAt(_selectedIndex),
+          if (_selectedIndex == 0)
+            Positioned(
+              right: 16,
+              bottom: 16,
+              child: FloatingActionButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => PostScreen()),
+                  );
+                },
+                child: Icon(Icons.add, color: Colors.white), // Changed to white
+                backgroundColor: Colors.blue[800],
+              ),
+            ),
+        ],
       ),
       bottomNavigationBar: BottomNavigationBar(
         items: const <BottomNavigationBarItem>[
@@ -62,16 +78,15 @@ class _ScuttlebuttHomePageState extends State<ScuttlebuttHomePage> {
             icon: Icon(Icons.person),
             label: 'Profile',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.add),
-            label: 'Post',
-          ),
         ],
         currentIndex: _selectedIndex,
-        selectedItemColor: Colors.blue,
-        unselectedItemColor: Colors.grey,
+        selectedItemColor: Colors.blue[800], // Darker shade of blue
+        unselectedItemColor:
+            Colors.grey, // Slightly lighter shade for unselected items
         onTap: _onItemTapped,
       ),
     );
   }
 }
+
+

@@ -1,19 +1,1 @@
 Can you read the attached file thoroughly to understand the code for my app, Scuttlebutt? Here's a description: "Scuttlebutt is an anonymous social app designed for military personnel, providing a platform similar to Yik Yak and Fizz tailored for military commands. Upon account creation, users verify their military status via ID.me and select their current command from a list of nearby options, which can be updated if they move commands. The app features four main tabs: Home, Messages, Profile, and Post. The Home tab presents a feed of posts from the user's command, allowing toggling between the main feed and new posts, with the ability to upvote, downvote, and comment, fostering threaded discussions like Reddit. Messages enable direct messaging within the command, while Profile showcases user activity and accumulated points, termed "Butts." The Post tab simplifies the creation of new posts. Scuttlebutt aims to enhance on-base communication and community by providing a space for real-time, location-based, anonymous interactions."
-
-I copied a template from a previous project I did called Scout. I replaced the GoogleService-Info.plist with a new one from Firebase. I think I updated Info.plist correctly.
-
-I wrote out some milestones for Scuttlebutt. Here are the first two:
-
-1. Project Setup and Basic Structure
-a. Set up Flutter project and Firebase integration
-b. Develop the main app layout with four tabs
-c. Implement basic navigation between tabs
-
-2. Home Feed
-a. Create the home feed UI
-b. Implement post fetching from Firebase
-c. Add toggle between main feed and new posts
-
-I think 1a should be done. Can you help me accomplish the rest of 1 and all of 2? Some files / code probably needs to be deleted. Please be specific about all changes. Thank you.
-
-For each file that needs to be edited, please give me the full code. Not just the code that needs editing; even the unchanged code. If any code involves an API key, include the actual API key in your response. When giving me edits to code or Firestore rules, ensure that existing functionality is maintained.
