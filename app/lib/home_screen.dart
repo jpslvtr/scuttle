@@ -1,61 +1,69 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends StatelessWidget {
   const HomeScreen({Key? key}) : super(key: key);
 
   @override
-  _HomeScreenState createState() => _HomeScreenState();
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Center(child: Text('Scuttlebutt')),
+          bottom: TabBar(
+            tabs: [
+              Tab(text: 'Main Feed'),
+              Tab(text: 'New Posts'),
+            ],
+          ),
+        ),
+        body: SafeArea(
+          child: TabBarView(
+            children: [
+              PostFeed(sortBy: 'upvotes'),
+              PostFeed(sortBy: 'timestamp'),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  bool _showNewPosts = false;
+class PostFeed extends StatelessWidget {
+  final String sortBy;
+
+  const PostFeed({Key? key, required this.sortBy}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Scuttlebutt'),
-        actions: [
-          Switch(
-            value: _showNewPosts,
-            onChanged: (value) {
-              setState(() {
-                _showNewPosts = value;
-              });
-            },
-          ),
-          Text(_showNewPosts ? 'New Posts' : 'Main Feed'),
-        ],
-      ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('posts')
-            .orderBy(_showNewPosts ? 'timestamp' : 'upvotes', descending: true)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('posts')
+          .orderBy(sortBy, descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
 
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(child: CircularProgressIndicator());
-          }
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(child: CircularProgressIndicator());
+        }
 
-          return ListView(
-            children: snapshot.data!.docs.map((DocumentSnapshot document) {
-              Map<String, dynamic> data =
-                  document.data() as Map<String, dynamic>;
-              return PostCard(
-                content: data['content'],
-                upvotes: data['upvotes'],
-                downvotes: data['downvotes'],
-                timestamp: data['timestamp'].toDate(),
-              );
-            }).toList(),
-          );
-        },
-      ),
+        return ListView(
+          children: snapshot.data!.docs.map((DocumentSnapshot document) {
+            Map<String, dynamic> data = document.data() as Map<String, dynamic>;
+            return PostCard(
+              content: data['content'] ?? '',
+              upvotes: data['upvotes'] ?? 0,
+              downvotes: data['downvotes'] ?? 0,
+              timestamp: data['timestamp']?.toDate() ?? DateTime.now(),
+            );
+          }).toList(),
+        );
+      },
     );
   }
 }

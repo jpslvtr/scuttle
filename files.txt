@@ -1,911 +1,47 @@
 File: app/lib/app_state.dart
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-
-class Place {
-  final String id;
-  final String name;
-  final String vicinity;
-  final double? rating;
-  final int? userRatingsTotal;
-  final String? website;
-  final List<String>? photoReferences;
-  final List<String>? reviews;
-  final double? latitude;
-  final double? longitude;
-  final String listId;
-  final String listName;
-
-  Place({
-    required this.id,
-    required this.name,
-    required this.vicinity,
-    this.rating,
-    this.userRatingsTotal,
-    this.website,
-    this.photoReferences,
-    this.reviews,
-    this.latitude,
-    this.longitude,
-    required this.listId,
-    required this.listName,
-  });
-
-  factory Place.fromJson(Map<String, dynamic> json, String listId, String listName) {
-    return Place(
-      id: json['place_id'] ?? '',
-      name: json['name'] ?? '',
-      vicinity: json['vicinity'] ?? '',
-      rating: json['rating']?.toDouble(),
-      userRatingsTotal: json['user_ratings_total'],
-      website: json['website'],
-      photoReferences: (json['photos'] as List<dynamic>?)
-          ?.map((photo) => photo['photo_reference'] as String)
-          .toList(),
-      reviews: (json['reviews'] as List<dynamic>?)
-          ?.map((review) => review['text'] as String)
-          .toList(),
-      latitude: json['geometry']?['location']?['lat']?.toDouble(),
-      longitude: json['geometry']?['location']?['lng']?.toDouble(),
-      listId: listId,
-      listName: listName,
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'place_id': id,
-      'name': name,
-      'vicinity': vicinity,
-      'rating': rating,
-      'user_ratings_total': userRatingsTotal,
-      'website': website,
-      'photos': photoReferences?.map((ref) => {'photo_reference': ref}).toList(),
-      'reviews': reviews?.map((review) => {'text': review}).toList(),
-      'geometry': {
-        'location': {
-          'lat': latitude,
-          'lng': longitude,
-        },
-      },
-      'listId': listId,
-      'listName': listName,
-    };
-  }
-
-  @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-    return other is Place && other.id == id;
-  }
-
-  @override
-  int get hashCode => id.hashCode;
-
-  @override
-  String toString() {
-    return 'Place(id: $id, name: $name)';
-  }
-}
-
-class PlaceList {
-  final String id;
-  String name;
-  List<Place> places;
-  String creatorId;
-  bool isPublic;
-
-  PlaceList({
-    required this.id,
-    required this.name,
-    required this.creatorId,
-    this.isPublic = false,
-    List<Place>? places,
-  }) : places = places ?? [];
-
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'name': name,
-      'creatorId': creatorId,
-      'isPublic': isPublic,
-      'places': places.map((place) => place.toJson()).toList(),
-    };
-  }
-
-  factory PlaceList.fromJson(Map<String, dynamic> json) {
-    return PlaceList(
-      id: json['id'],
-      name: json['name'],
-      creatorId: json['creatorId'],
-      isPublic: json['isPublic'] ?? false,
-      places: (json['places'] as List<dynamic>?)
-              ?.map((placeJson) => Place.fromJson(placeJson, json['id'], json['name']))
-              .toList() ??
-          [],
-    );
-  }
-}
-
-class Event {
-  final String id;
-  final String name;
-  final String description;
-  final DateTime startTime;
-  final DateTime endTime;
-  final String creatorId;
-  final List<String> participants;
-
-  Event({
-    required this.id,
-    required this.name,
-    required this.description,
-    required this.startTime,
-    required this.endTime,
-    required this.creatorId,
-    List<String>? participants,
-  }) : participants = participants ?? [];
-
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'name': name,
-      'description': description,
-      'startTime': startTime.toIso8601String(),
-      'endTime': endTime.toIso8601String(),
-      'creatorId': creatorId,
-      'participants': participants,
-    };
-  }
-
-  factory Event.fromJson(Map<String, dynamic> json) {
-    return Event(
-      id: json['id'],
-      name: json['name'],
-      description: json['description'],
-      startTime: DateTime.parse(json['startTime']),
-      endTime: DateTime.parse(json['endTime']),
-      creatorId: json['creatorId'],
-      participants: List<String>.from(json['participants'] ?? []),
-    );
-  }
-}
 
 class AppState extends ChangeNotifier {
   String? userId;
-  List<PlaceList> _lists = [];
-  List<Event> _events = [];
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  String? displayName;
-  String? userName;
-  String? bio;
-  String? photoURL;
-  String? email;
-  List<String>? followers;
-  List<String>? following;
-  List<String>? followedLists;
+  String? command;
 
-  AppState({this.userId});
+  AppState({this.userId, this.command});
 
-  List<PlaceList> get lists => _lists;
-  List<Event> get events => _events;
+  Future<void> createPost(String content) async {
+    if (userId == null || command == null) return;
 
-  Future<void> createList(String name, {bool isPublic = false}) async {
-    if (userId == null) return;
-
-    final listId = _firestore.collection('lists').doc().id;
-    final list = PlaceList(
-        id: listId, name: name, creatorId: userId!, isPublic: isPublic);
-    _lists.add(list);
-    notifyListeners();
-
-    await _firestore.collection('lists').doc(listId).set({
-      'id': listId,
-      'name': name,
-      'creatorId': userId,
-      'isPublic': isPublic,
-      'places': [],
-      'createdAt': FieldValue.serverTimestamp(),
+    await FirebaseFirestore.instance.collection('posts').add({
+      'content': content,
+      'userId': userId,
+      'command': command,
+      'upvotes': 0,
+      'downvotes': 0,
+      'timestamp': FieldValue.serverTimestamp(),
     });
 
-    await _firestore.collection('users').doc(userId).update({
-      'createdLists': FieldValue.arrayUnion([listId]),
-    });
-  }
-
-  Future<void> renameList(String id, String newName) async {
-    final listIndex = _lists.indexWhere((list) => list.id == id);
-    if (listIndex != -1) {
-      _lists[listIndex].name = newName;
-      notifyListeners();
-
-      if (userId != null) {
-        await _firestore.collection('lists').doc(id).update({
-          'name': newName,
-        });
-      }
-    }
-  }
-
-  Future<void> toggleListPublicStatus(String listId) async {
-    final listIndex = _lists.indexWhere((list) => list.id == listId);
-    if (listIndex != -1) {
-      _lists[listIndex].isPublic = !_lists[listIndex].isPublic;
-      notifyListeners();
-
-      await _firestore.collection('lists').doc(listId).update({
-        'isPublic': _lists[listIndex].isPublic,
-      });
-    }
-  }
-
-  Future<void> addPlaceToList(String listId, String placeId) async {
-    try {
-      print('Fetching details for place ID: $placeId');
-      final placeDetails = await fetchPlaceDetails(placeId);
-      if (placeDetails == null) {
-        throw Exception('Failed to fetch place details');
-      }
-      print('Place details: $placeDetails');
-      final listIndex = _lists.indexWhere((list) => list.id == listId);
-      if (listIndex != -1) {
-        final placeList = _lists[listIndex];
-        final place = Place.fromJson(placeDetails, listId, placeList.name);
-        if (!placeList.places.any((p) => p.id == place.id)) {
-          placeList.places.add(place);
-          notifyListeners();
-          print('Place added to list: $listId');
-          await _firestore.collection('lists').doc(listId).update({
-            'places': FieldValue.arrayUnion([place.toJson()]),
-          });
-        } 
-        if (followedLists?.contains(listId) ?? false) {
-          _followedPlaces = null;
-        }
-        else {
-          print('Place already exists in the list: $listId');
-        }
-      } else {
-        print('List not found: $listId');
-      }
-    } catch (e) {
-      print('Error adding place to list: $e');
-    }
-  }
-
-  Future<void> updatePlaceLatLong(String listId, String placeId) async {
-    try {
-      final placeDetails = await fetchPlaceDetails(placeId);
-      if (placeDetails == null) {
-        throw Exception('Failed to fetch place details');
-      }
-      final listIndex = _lists.indexWhere((list) => list.id == listId);
-      if (listIndex != -1) {
-        final placeList = _lists[listIndex];
-        final updatedPlace = Place.fromJson(placeDetails, listId, placeList.name);
-
-        final placeIndex = placeList.places.indexWhere((p) => p.id == placeId);
-        if (placeIndex != -1) {
-          placeList.places[placeIndex] = updatedPlace;
-          notifyListeners();
-
-          await _firestore.collection('lists').doc(listId).update({
-            'places': placeList.places.map((p) => p.toJson()).toList(),
-          });
-          print('Updated lat/long for place: $placeId in list: $listId');
-        }
-      }
-    } catch (e) {
-      print('Error updating place lat/long: $e');
-    }
-  }
-
-  Future<void> migrateExistingPlacesLatLong() async {
-    for (var list in _lists) {
-      for (var place in list.places) {
-        if (place.latitude == null || place.longitude == null) {
-          await updatePlaceLatLong(list.id, place.id);
-        }
-      }
-    }
-  }
-
-  Future<void> removePlaceFromList(String listId, String placeId) async {
-    final listIndex = _lists.indexWhere((list) => list.id == listId);
-    if (listIndex != -1) {
-      _lists[listIndex].places.removeWhere((place) => place.id == placeId);
-      notifyListeners();
-      print('Place removed from list: $listId');
-      await _firestore.collection('lists').doc(listId).update({
-        'places': _lists[listIndex].places.map((place) => place.toJson()).toList(),
-      });
-    } else {
-      print('List not found: $listId');
-    }
-    if (followedLists?.contains(listId) ?? false) {
-      _followedPlaces = null;
-    }
-  }
-
-  List<String> getListsContainingPlace(String placeId) {
-    return _lists
-        .where((list) => list.places.any((place) => place.id == placeId))
-        .map((list) => list.id)
-        .toList();
-  }
-
-  Future<Map<String, dynamic>?> fetchPlaceDetails(String placeId) async {
-    final url = Uri.parse(
-      'https://maps.googleapis.com/maps/api/place/details/json'
-      '?place_id=$placeId'
-      '&fields=place_id,name,rating,user_ratings_total,formatted_address,vicinity,geometry,photos,opening_hours,website,reviews'
-      '&key=AIzaSyDKTZVwlg1SO-JlyAH3LZd0F4qYsbjdh3g',
-    );
-
-    print('Fetching place details from URL: $url');
-    final response = await http.get(url);
-
-    if (response.statusCode == 200) {
-      final result = json.decode(response.body)['result'];
-      print('Fetched place details: $result');
-      return result;
-    } else {
-      print(
-          'Failed to load place details with status code: ${response.statusCode}');
-      print('Response body: ${response.body}');
-      return null;
-    }
-  }
-
-  Future<void> createEvent(String name, String description, DateTime startTime,
-      DateTime endTime) async {
-    if (userId == null) return;
-
-    final eventId = _firestore.collection('events').doc().id;
-    final event = Event(
-      id: eventId,
-      name: name,
-      description: description,
-      startTime: startTime,
-      endTime: endTime,
-      creatorId: userId!,
-      participants: [userId!],
-    );
-
-    _events.add(event);
-    notifyListeners();
-
-    await _firestore.collection('events').doc(eventId).set(event.toJson());
-
-    await _firestore.collection('users').doc(userId).update({
-      'events': FieldValue.arrayUnion([eventId]),
-    });
-  }
-
-  Future<void> joinEvent(String eventId) async {
-    if (userId == null) return;
-
-    final event = _events.firstWhere((event) => event.id == eventId);
-    if (!event.participants.contains(userId)) {
-      event.participants.add(userId!);
-      notifyListeners();
-
-      await _firestore.collection('events').doc(eventId).update({
-        'participants': FieldValue.arrayUnion([userId]),
-      });
-
-      await _firestore.collection('users').doc(userId).update({
-        'events': FieldValue.arrayUnion([eventId]),
-      });
-    }
-  }
-
-  Future<void> leaveEvent(String eventId) async {
-    if (userId == null) return;
-
-    final event = _events.firstWhere((event) => event.id == eventId);
-    event.participants.remove(userId);
-    notifyListeners();
-
-    await _firestore.collection('events').doc(eventId).update({
-      'participants': FieldValue.arrayRemove([userId]),
-    });
-
-    await _firestore.collection('users').doc(userId).update({
-      'events': FieldValue.arrayRemove([eventId]),
-    });
-  }
-
-  Future<void> loadUserData() async {
-    if (userId == null) {
-      print('loadUserData: userId is null');
-      return;
-    }
-
-    try {
-      print('Attempting to load user data for userId: $userId');
-      final userDoc = await _firestore.collection('users').doc(userId).get();
-      if (userDoc.exists) {
-        print('User document exists');
-        final userData = userDoc.data() as Map<String, dynamic>;
-        displayName = userData['displayName'] ?? '';
-        userName = userData['userName'] ?? '';
-        bio = userData['bio'] ?? '';
-        photoURL = userData['photoURL'];
-        email = userData['email'] ?? '';
-        followers = List<String>.from(userData['followers'] ?? []);
-following = List<String>.from(userData['following'] ?? []);
-        followedLists = List<String>.from(userData['followedLists'] ?? []);
-        _followedPlaces = null; // Clear the cache when user data is loaded
-        final listIds = List<String>.from(userData['createdLists'] ?? []);
-
-        _lists.clear();
-        for (final listId in listIds) {
-          try {
-            final listDoc =
-                await _firestore.collection('lists').doc(listId).get();
-            if (listDoc.exists) {
-              final listData = listDoc.data() as Map<String, dynamic>;
-              _lists.add(PlaceList.fromJson(listData));
-            }
-          } catch (e) {
-            print('Error loading list $listId: $e');
-          }
-        }
-
-        notifyListeners();
-      } else {
-        print('User document does not exist, creating new document');
-        await _firestore.collection('users').doc(userId).set({
-          'displayName': '',
-          'userName': '',
-          'bio': '',
-          'email': '',
-          'photoURL': null,
-          'createdLists': [],
-          'followedLists': [],
-          'events': [],
-          'followers': [],
-          'following': [],
-        });
-      }
-    } catch (e) {
-      print('Error loading user data: $e');
-      if (e is FirebaseException) {
-        print('Firebase Exception Code: ${e.code}');
-        print('Firebase Exception Message: ${e.message}');
-      }
-    }
-  }
-
-  Future<void> updateUserProfile({
-    String? newDisplayName,
-    String? newUserName,
-    String? newBio,
-  }) async {
-    if (userId == null) return;
-
-    try {
-      final updates = <String, dynamic>{};
-      if (newDisplayName != null) {
-        updates['displayName'] = newDisplayName;
-        displayName = newDisplayName;
-      }
-      if (newUserName != null && newUserName != userName) {
-        if (!isValidUserName(newUserName)) {
-          throw Exception('Invalid username format');
-        }
-        if (!await isUserNameUnique(newUserName)) {
-          throw Exception('Username already taken');
-        }
-        updates['userName'] = newUserName;
-        userName = newUserName;
-      }
-      if (newBio != null) {
-        updates['bio'] = newBio;
-        bio = newBio;
-      }
-
-      await _firestore.collection('users').doc(userId).update(updates);
-
-      notifyListeners();
-    } catch (e) {
-      print('Error updating user profile: $e');
-      if (e is FirebaseException) {
-        print('Firebase Error Code: ${e.code}');
-        print('Firebase Error Message: ${e.message}');
-      }
-      rethrow;
-    }
-  }
-
-  Future<void> setUserId(String? id) async {
-    userId = id;
-    if (id != null) {
-      try {
-        final userDoc = await _firestore.collection('users').doc(id).get();
-        if (!userDoc.exists) {
-          await _firestore.collection('users').doc(id).set({
-            'displayName': '',
-            'userName': '',
-            'bio': '',
-            'email': '',
-            'photoURL': null,
-            'createdLists': [],
-            'followedLists': [],
-            'events': [],
-            'followers': [],
-            'following': [],
-          });
-        }
-        await loadUserData();
-      } catch (e) {
-        print('Error in setUserId: $e');
-      }
-    } else {
-      _lists = [];
-      _events = [];
-      displayName = null;
-      userName = null;
-      bio = null;
-      photoURL = null;
-      email = null;
-      followers = null;
-      following = null;
-      followedLists = null;
-    }
     notifyListeners();
   }
 
-  Future<void> handleAppleSignIn(UserCredential userCredential) async {
-    final user = userCredential.user;
-    if (user != null) {
-      // Check if this is a new user
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      if (!userDoc.exists) {
-        // This is a new user, create a new document for them
-        final String? email = user.email;
-        final String? displayName = user.displayName;
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-          'email': email,
-          'displayName': displayName,
-          'userName': '',
-          'bio': '',
-          'photoURL': null,
-          'createdAt': FieldValue.serverTimestamp(),
-          'createdLists': [],
-          'followedLists': [],
-          'events': [],
-          'followers': [],
-          'following': [],
-        });
-      }
-      await initializeUser(user.uid);
-    }
-  }
+  Future<void> upvotePost(String postId) async {
+    if (userId == null) return;
 
-  Future<void> initializeUser(String uid) async {
-    userId = uid;
+    await FirebaseFirestore.instance.collection('posts').doc(postId).update({
+      'upvotes': FieldValue.increment(1),
+    });
 
-    final userDoc = await _firestore.collection('users').doc(uid).get();
-
-    if (!userDoc.exists) {
-      // If the document doesn't exist, create it with default values
-      await _firestore.collection('users').doc(uid).set({
-        'displayName': '',
-        'userName': '',
-        'bio': '',
-        'email': FirebaseAuth.instance.currentUser?.email ?? '',
-        'photoURL': null,
-        'createdLists': [],
-        'followedLists': [],
-        'events': [],
-        'followers': [],
-        'following': [],
-      });
-    } else {
-      // If the document exists but doesn't have an email, update it
-      final userData = userDoc.data() as Map<String, dynamic>;
-      if (userData['email'] == null) {
-        await _firestore.collection('users').doc(uid).update({
-          'email': FirebaseAuth.instance.currentUser?.email ?? '',
-        });
-      }
-    }
-
-    await loadUserData();
-    await migrateExistingPlacesLatLong();
     notifyListeners();
   }
 
-  void clearUserData() {
-    userId = null;
-    _lists = [];
-    _events = [];
-    displayName = null;
-    userName = null;
-    bio = null;
-    photoURL = null;
-    email = null;
-    followers = null;
-    following = null;
-    followedLists = null;
+  Future<void> downvotePost(String postId) async {
+    if (userId == null) return;
+
+    await FirebaseFirestore.instance.collection('posts').doc(postId).update({
+      'downvotes': FieldValue.increment(1),
+    });
+
     notifyListeners();
-  }
-
-  bool isValidUserName(String userName) {
-    final RegExp validCharacters = RegExp(r'^[a-zA-Z0-9._]+$');
-    return validCharacters.hasMatch(userName);
-  }
-
-  Future<bool> isUserNameUnique(String userName) async {
-    final QuerySnapshot result = await FirebaseFirestore.instance
-        .collection('users')
-        .where('userName', isEqualTo: userName)
-        .limit(1)
-        .get();
-    return result.docs.isEmpty;
-  }
-
-  Future<List<Map<String, dynamic>>> searchUsers(String query) async {
-    final queryLower = query.toLowerCase();
-    final userNameSnapshot = await _firestore
-        .collection('users')
-        .where('userName', isGreaterThanOrEqualTo: queryLower)
-        .where('userName', isLessThan: queryLower + 'z')
-        .get();
-
-    final displayNameSnapshot = await _firestore
-        .collection('users')
-        .where('displayName', isGreaterThanOrEqualTo: queryLower)
-        .where('displayName', isLessThan: queryLower + 'z')
-        .get();
-
-    final allDocs = [...userNameSnapshot.docs, ...displayNameSnapshot.docs];
-    final uniqueDocs = allDocs.toSet().toList();
-
-    return uniqueDocs.where((doc) => doc.id != userId).map((doc) {
-      final data = doc.data();
-      return {
-        'id': doc.id,
-        'userName': data['userName'] ?? '',
-        'displayName': data['displayName'] ?? '',
-        'photoURL': data['photoURL'],
-      };
-    }).toList();
-  }
-
-  Future<void> followUser(String targetUserId) async {
-    if (userId == null) return;
-
-    await _firestore.collection('users').doc(userId).update({
-      'following': FieldValue.arrayUnion([targetUserId]),
-    });
-
-    await _firestore.collection('users').doc(targetUserId).update({
-      'followers': FieldValue.arrayUnion([userId]),
-    });
-
-    following?.add(targetUserId);
-    notifyListeners();
-  }
-
-  Future<void> unfollowUser(String targetUserId) async {
-    if (userId == null) return;
-
-    await _firestore.collection('users').doc(userId).update({
-      'following': FieldValue.arrayRemove([targetUserId]),
-    });
-
-    await _firestore.collection('users').doc(targetUserId).update({
-      'followers': FieldValue.arrayRemove([userId]),
-    });
-
-    following?.remove(targetUserId);
-    notifyListeners();
-  }
-
-  Future<bool> isFollowing(String targetUserId) async {
-    if (userId == null) return false;
-
-    final userDoc = await _firestore.collection('users').doc(userId).get();
-    final following = userDoc.data()?['following'] as List<dynamic>? ?? [];
-    return following.contains(targetUserId);
-  }
-
-  Future<Map<String, dynamic>> getUserProfile(String targetUserId) async {
-    final userDoc =
-        await _firestore.collection('users').doc(targetUserId).get();
-    return userDoc.data() ?? {};
-  }
-
-  Future<List<PlaceList>> getPublicListsForUser(String targetUserId) async {
-    final querySnapshot = await _firestore
-        .collection('lists')
-        .where('creatorId', isEqualTo: targetUserId)
-        .where('isPublic', isEqualTo: true)
-        .get();
-
-    return querySnapshot.docs
-        .map((doc) => PlaceList.fromJson(doc.data()))
-        .toList();
-  }
-
-  Future<PlaceList> getListDetails(String listId) async {
-    final doc = await _firestore.collection('lists').doc(listId).get();
-    if (!doc.exists) {
-      throw Exception('List not found');
-    }
-    return PlaceList.fromJson(doc.data()!..['id'] = doc.id);
-  }
-
-  Future<void> followList(String listId) async {
-    if (userId == null) return;
-
-    await _firestore.collection('users').doc(userId).update({
-      'followedLists': FieldValue.arrayUnion([listId]),
-    });
-
-    await _firestore.collection('lists').doc(listId).update({
-      'followers': FieldValue.arrayUnion([userId]),
-    });
-
-    followedLists?.add(listId);
-    _followedPlaces = null; // Clear the cache
-    notifyListeners();
-  }
-
-  Future<void> unfollowList(String listId) async {
-    if (userId == null) return;
-
-    await _firestore.collection('users').doc(userId).update({
-      'followedLists': FieldValue.arrayRemove([listId]),
-    });
-
-    await _firestore.collection('lists').doc(listId).update({
-      'followers': FieldValue.arrayRemove([userId]),
-    });
-
-    followedLists?.remove(listId);
-    _followedPlaces = null; // Clear the cache
-    notifyListeners();
-  }
-
-  Future<List<PlaceList>> getFollowedLists() async {
-    if (userId == null || followedLists == null) return [];
-
-    List<PlaceList> followedListsData = [];
-
-    for (String listId in followedLists!) {
-      try {
-        DocumentSnapshot listDoc =
-            await _firestore.collection('lists').doc(listId).get();
-        if (listDoc.exists) {
-          Map<String, dynamic> listData =
-              listDoc.data() as Map<String, dynamic>;
-          followedListsData.add(PlaceList.fromJson(listData));
-        }
-      } catch (e) {
-        print('Error fetching followed list $listId: $e');
-      }
-    }
-
-    return followedListsData;
-  }
-
-  List<Place>? _followedPlaces;
-
-  Future<List<Place>> getFollowedListsPlaces() async {
-    if (_followedPlaces != null) return _followedPlaces!;
-
-    List<Place> followedPlaces = [];
-    if (userId == null || followedLists == null) return followedPlaces;
-
-    for (String listId in followedLists!) {
-      try {
-        DocumentSnapshot listDoc =
-            await _firestore.collection('lists').doc(listId).get();
-        if (listDoc.exists) {
-          Map<String, dynamic> listData =
-              listDoc.data() as Map<String, dynamic>;
-          String listName = listData['name'] ?? 'Unnamed List';
-          if (listData['isPublic'] == true || listData['creatorId'] == userId) {
-            List<dynamic> places = listData['places'] ?? [];
-            for (var placeData in places) {
-              Place place = Place.fromJson(placeData, listId, listName);
-              followedPlaces.add(place);
-            }
-          }
-        }
-      } catch (e) {
-        print('Error fetching places from followed list $listId: $e');
-      }
-    }
-
-    _followedPlaces = followedPlaces;
-    return followedPlaces;
-  }
-
-Future<void> deleteList(String id) async {
-    if (userId == null) return;
-
-    try {
-      // Fetch the list data
-      DocumentSnapshot listDoc =
-          await _firestore.collection('lists').doc(id).get();
-
-      if (listDoc.exists) {
-        Map<String, dynamic> listData = listDoc.data() as Map<String, dynamic>;
-
-        // Check if the current user is the creator of the list
-        if (listData['creatorId'] != userId) {
-          throw Exception('You do not have permission to delete this list.');
-        }
-
-        // Delete from the original lists collection
-        await _firestore.collection('lists').doc(id).delete();
-
-        // Update the user's createdLists
-        await _firestore.collection('users').doc(userId).update({
-          'createdLists': FieldValue.arrayRemove([id]),
-        });
-
-        // Remove the list from local state
-        _lists.removeWhere((list) => list.id == id);
-        notifyListeners();
-
-        print('List deleted successfully: $id');
-      } else {
-        print('List not found: $id');
-      }
-    } catch (e) {
-      print('Error deleting list: $e');
-      rethrow;
-    }
-  }
-
-  Future<void> deleteAccount() async {
-    if (userId == null) return;
-
-    try {
-      // Fetch user data
-      DocumentSnapshot userDoc =
-          await _firestore.collection('users').doc(userId).get();
-
-      if (userDoc.exists) {
-        // Cast the data to Map<String, dynamic>
-        Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
-
-        // Move user data to archive-users collection
-        await _firestore.collection('archive-users').doc(userId).set(userData);
-
-        // Archive all lists created by the user
-        List<String> createdLists =
-            List<String>.from(userData['createdLists'] ?? []);
-        for (String listId in createdLists) {
-          await deleteList(listId);
-        }
-
-        // Delete user data from users collection
-        await _firestore.collection('users').doc(userId).delete();
-
-        // Delete the user's authentication account
-        await FirebaseAuth.instance.currentUser?.delete();
-
-        // Clear local data
-        clearUserData();
-      }
-    } catch (e) {
-      print('Error archiving account: $e');
-      rethrow;
-    }
   }
 }
 
@@ -914,16 +50,134 @@ Future<void> deleteList(String id) async {
 File: app/lib/home_screen.dart
 
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
 
   @override
+  _HomeScreenState createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  bool _showNewPosts = false;
+
+  @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Text(
-        'Welcome to Scuttlebutt!',
-        style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+    return Scaffold(
+      appBar: AppBar(
+        title: Center(child: Text('Scuttlebutt')),
+        actions: [
+          Padding(
+            padding: EdgeInsets.only(right: 16.0),
+            child: Row(
+              children: [
+                Switch(
+                  value: _showNewPosts,
+                  onChanged: (value) {
+                    setState(() {
+                      _showNewPosts = value;
+                    });
+                  },
+                ),
+                Text(_showNewPosts ? 'New Posts' : 'Main Feed'),
+              ],
+            ),
+          ),
+        ],
+      ),
+      body: Padding(
+        padding: EdgeInsets.only(top: 16.0),
+        child: StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('posts')
+              .orderBy(_showNewPosts ? 'timestamp' : 'upvotes',
+                  descending: true)
+              .snapshots(),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return Center(child: Text('Error: ${snapshot.error}'));
+            }
+
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return Center(child: CircularProgressIndicator());
+            }
+
+            return ListView(
+              children: snapshot.data!.docs.map((DocumentSnapshot document) {
+                Map<String, dynamic> data =
+                    document.data() as Map<String, dynamic>;
+                return PostCard(
+                  content: data['content'] ?? '',
+                  upvotes: data['upvotes'] ?? 0,
+                  downvotes: data['downvotes'] ?? 0,
+                  timestamp: data['timestamp']?.toDate() ?? DateTime.now(),
+                );
+              }).toList(),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class PostCard extends StatelessWidget {
+  final String content;
+  final int upvotes;
+  final int downvotes;
+  final DateTime timestamp;
+
+  const PostCard({
+    Key? key,
+    required this.content,
+    required this.upvotes,
+    required this.downvotes,
+    required this.timestamp,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.all(8.0),
+      child: Padding(
+        padding: EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(content),
+            SizedBox(height: 8.0),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('${upvotes - downvotes} points'),
+                Text('${timestamp.toString().split('.')[0]}'),
+              ],
+            ),
+            Row(
+              children: [
+                IconButton(
+                  icon: Icon(Icons.arrow_upward),
+                  onPressed: () {
+                    // Implement upvote functionality
+                  },
+                ),
+                IconButton(
+                  icon: Icon(Icons.arrow_downward),
+                  onPressed: () {
+                    // Implement downvote functionality
+                  },
+                ),
+                IconButton(
+                  icon: Icon(Icons.comment),
+                  onPressed: () {
+                    // Implement comment functionality
+                  },
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -933,1544 +187,313 @@ class HomeScreen extends StatelessWidget {
 
 File: app/lib/login_page.dart
 
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:sign_in_with_apple/sign_in_with_apple.dart';
-import 'package:crypto/crypto.dart';
-import 'dart:convert';
-import 'dart:math';
-import 'app_state.dart';
-import 'place_tracker_app.dart';
+// import 'package:flutter/material.dart';
+// import 'package:firebase_auth/firebase_auth.dart';
+// import 'package:google_sign_in/google_sign_in.dart';
+// import 'package:provider/provider.dart';
+// import 'package:cloud_firestore/cloud_firestore.dart';
+// import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+// import 'package:crypto/crypto.dart';
+// import 'dart:convert';
+// import 'dart:math';
+// import 'app_state.dart';
+// import 'scuttlebutt_app.dart';
 
-class LoginPage extends StatelessWidget {
-  const LoginPage({Key? key}) : super(key: key);
+// class LoginPage extends StatelessWidget {
+//   const LoginPage({Key? key}) : super(key: key);
 
-  String generateNonce([int length = 32]) {
-    final charset =
-        '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
-    final random = Random.secure();
-    return List.generate(length, (_) => charset[random.nextInt(charset.length)])
-        .join();
-  }
+//   String generateNonce([int length = 32]) {
+//     final charset =
+//         '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
+//     final random = Random.secure();
+//     return List.generate(length, (_) => charset[random.nextInt(charset.length)])
+//         .join();
+//   }
 
-  String sha256ofString(String input) {
-    final bytes = utf8.encode(input);
-    final digest = sha256.convert(bytes);
-    return digest.toString();
-  }
+//   String sha256ofString(String input) {
+//     final bytes = utf8.encode(input);
+//     final digest = sha256.convert(bytes);
+//     return digest.toString();
+//   }
 
-  Future<UserCredential> signInWithGoogle() async {
-    final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
-    final GoogleSignInAuthentication? googleAuth =
-        await googleUser?.authentication;
-    final credential = GoogleAuthProvider.credential(
-      accessToken: googleAuth?.accessToken,
-      idToken: googleAuth?.idToken,
-    );
-    final UserCredential userCredential =
-        await FirebaseAuth.instance.signInWithCredential(credential);
-    final String? email = userCredential.user?.email;
-    if (email != null) {
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userCredential.user!.uid)
-          .set({'email': email}, SetOptions(merge: true));
-    }
-    return userCredential;
-  }
+//   Future<UserCredential> signInWithGoogle() async {
+//     final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+//     final GoogleSignInAuthentication? googleAuth =
+//         await googleUser?.authentication;
+//     final credential = GoogleAuthProvider.credential(
+//       accessToken: googleAuth?.accessToken,
+//       idToken: googleAuth?.idToken,
+//     );
+//     final UserCredential userCredential =
+//         await FirebaseAuth.instance.signInWithCredential(credential);
+//     final String? email = userCredential.user?.email;
+//     if (email != null) {
+//       await FirebaseFirestore.instance
+//           .collection('users')
+//           .doc(userCredential.user!.uid)
+//           .set({'email': email}, SetOptions(merge: true));
+//     }
+//     return userCredential;
+//   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                'Scuttlebutt',
-                style: TextStyle(
-                  fontSize: 48,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF8C1515),
-                ),
-              ),
-              SizedBox(height: 20),
-              // Image.asset(
-              //   'assets/AppIcon-1024.png',
-              //   width: 100,
-              //   height: 100,
-              // ),
-              SizedBox(height: 50),
-              Container(
-                width: 250,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    foregroundColor: Colors.black,
-                    backgroundColor: Colors.white,
-                    padding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Image.asset('assets/google_logo.png', height: 24),
-                      SizedBox(width: 10),
-                      Text('Sign in with Google'),
-                    ],
-                  ),
-                  onPressed: () async {
-                    try {
-                      final UserCredential userCredential =
-                          await signInWithGoogle();
-                      final user = userCredential.user;
-                      if (user != null) {
-                        print('User signed in: ${user.uid}');
-                        await Provider.of<AppState>(context, listen: false)
-                            .initializeUser(user.uid)
-                            .catchError((error) {
-                          print('Error initializing user: $error');
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                                content: Text(
-                                    'Error loading user data. Please try again.')),
-                          );
-                        });
-                        print('UserId set in AppState');
-                        Navigator.of(context).pushReplacement(
-                          MaterialPageRoute(
-                              builder: (context) => PlaceTrackerApp()),
-                        );
-                      }
-                    } catch (e) {
-                      print('Error during sign in: $e');
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                            content: Text('Failed to sign in with Google')),
-                      );
-                    }
-                  },
-                ),
-              ),
-              SizedBox(height: 20),
-              Container(
-                width: 250,
-                height: 50,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    backgroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.apple, size: 24),
-                      SizedBox(width: 10),
-                      Text(
-                        'Sign in with Apple',
-                        style: TextStyle(
-                          fontSize: Theme.of(context)
-                                  .textTheme
-                                  .labelLarge!
-                                  .fontSize! * 1.05,
-                        ),
-                      ),
-                    ],
-                  ),
-                  onPressed: () async {
-                    final rawNonce = generateNonce();
-                    final nonce = sha256ofString(rawNonce);
+//   @override
+//   Widget build(BuildContext context) {
+//     return Scaffold(
+//       body: Center(
+//         child: SingleChildScrollView(
+//           child: Column(
+//             mainAxisAlignment: MainAxisAlignment.center,
+//             children: [
+//               Text(
+//                 'Scuttlebutt',
+//                 style: TextStyle(
+//                   fontSize: 48,
+//                   fontWeight: FontWeight.bold,
+//                   color: Color(0xFF8C1515),
+//                 ),
+//               ),
+//               SizedBox(height: 20),
+//               // Image.asset(
+//               //   'assets/AppIcon-1024.png',
+//               //   width: 100,
+//               //   height: 100,
+//               // ),
+//               SizedBox(height: 50),
+//               Container(
+//                 width: 250,
+//                 child: ElevatedButton(
+//                   style: ElevatedButton.styleFrom(
+//                     foregroundColor: Colors.black,
+//                     backgroundColor: Colors.white,
+//                     padding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+//                     shape: RoundedRectangleBorder(
+//                       borderRadius: BorderRadius.circular(8),
+//                     ),
+//                   ),
+//                   child: Row(
+//                     mainAxisSize: MainAxisSize.min,
+//                     children: [
+//                       Image.asset('assets/google_logo.png', height: 24),
+//                       SizedBox(width: 10),
+//                       Text('Sign in with Google'),
+//                     ],
+//                   ),
+//                   onPressed: () async {
+//                     try {
+//                       final UserCredential userCredential =
+//                           await signInWithGoogle();
+//                       final user = userCredential.user;
+//                       if (user != null) {
+//                         print('User signed in: ${user.uid}');
+//                         await Provider.of<AppState>(context, listen: false)
+//                             .initializeUser(user.uid)
+//                             .catchError((error) {
+//                           print('Error initializing user: $error');
+//                           ScaffoldMessenger.of(context).showSnackBar(
+//                             SnackBar(
+//                                 content: Text(
+//                                     'Error loading user data. Please try again.')),
+//                           );
+//                         });
+//                         print('UserId set in AppState');
+//                         Navigator.of(context).pushReplacement(
+//                           MaterialPageRoute(
+//                               builder: (context) => PlaceTrackerApp()),
+//                         );
+//                       }
+//                     } catch (e) {
+//                       print('Error during sign in: $e');
+//                       ScaffoldMessenger.of(context).showSnackBar(
+//                         SnackBar(
+//                             content: Text('Failed to sign in with Google')),
+//                       );
+//                     }
+//                   },
+//                 ),
+//               ),
+//               SizedBox(height: 20),
+//               Container(
+//                 width: 250,
+//                 height: 50,
+//                 child: ElevatedButton(
+//                   style: ElevatedButton.styleFrom(
+//                     foregroundColor: Colors.white,
+//                     backgroundColor: Colors.black,
+//                     shape: RoundedRectangleBorder(
+//                       borderRadius: BorderRadius.circular(8),
+//                     ),
+//                   ),
+//                   child: Row(
+//                     mainAxisAlignment: MainAxisAlignment.center,
+//                     children: [
+//                       Icon(Icons.apple, size: 24),
+//                       SizedBox(width: 10),
+//                       Text(
+//                         'Sign in with Apple',
+//                         style: TextStyle(
+//                           fontSize: Theme.of(context)
+//                                   .textTheme
+//                                   .labelLarge!
+//                                   .fontSize! * 1.05,
+//                         ),
+//                       ),
+//                     ],
+//                   ),
+//                   onPressed: () async {
+//                     final rawNonce = generateNonce();
+//                     final nonce = sha256ofString(rawNonce);
 
-                    try {
-                      final appleCredential =
-                          await SignInWithApple.getAppleIDCredential(
-                        scopes: [
-                          AppleIDAuthorizationScopes.email,
-                          AppleIDAuthorizationScopes.fullName,
-                        ],
-                        nonce: nonce,
-                      );
+//                     try {
+//                       final appleCredential =
+//                           await SignInWithApple.getAppleIDCredential(
+//                         scopes: [
+//                           AppleIDAuthorizationScopes.email,
+//                           AppleIDAuthorizationScopes.fullName,
+//                         ],
+//                         nonce: nonce,
+//                       );
 
-                      final oauthCredential =
-                          OAuthProvider("apple.com").credential(
-                        idToken: appleCredential.identityToken,
-                        rawNonce: rawNonce,
-                      );
+//                       final oauthCredential =
+//                           OAuthProvider("apple.com").credential(
+//                         idToken: appleCredential.identityToken,
+//                         rawNonce: rawNonce,
+//                       );
 
-                      final userCredential = await FirebaseAuth.instance
-                          .signInWithCredential(oauthCredential);
-                      final user = userCredential.user;
+//                       final userCredential = await FirebaseAuth.instance
+//                           .signInWithCredential(oauthCredential);
+//                       final user = userCredential.user;
 
-                      if (user != null) {
-                        print('User signed in with Apple: ${user.uid}');
-                        await Provider.of<AppState>(context, listen: false)
-                            .handleAppleSignIn(userCredential)
-                            .catchError((error) {
-                          print('Error initializing user: $error');
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                                content: Text(
-                                    'Error loading user data. Please try again.')),
-                          );
-                        });
-                        print('UserId set in AppState');
-                        Navigator.of(context).pushReplacement(
-                          MaterialPageRoute(
-                              builder: (context) => PlaceTrackerApp()),
-                        );
-                      }
-                    } catch (e) {
-                      print('Error during Apple sign in: $e');
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Failed to sign in with Apple')),
-                      );
-                    }
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
+//                       if (user != null) {
+//                         print('User signed in with Apple: ${user.uid}');
+//                         await Provider.of<AppState>(context, listen: false)
+//                             .handleAppleSignIn(userCredential)
+//                             .catchError((error) {
+//                           print('Error initializing user: $error');
+//                           ScaffoldMessenger.of(context).showSnackBar(
+//                             SnackBar(
+//                                 content: Text(
+//                                     'Error loading user data. Please try again.')),
+//                           );
+//                         });
+//                         print('UserId set in AppState');
+//                         Navigator.of(context).pushReplacement(
+//                           MaterialPageRoute(
+//                               builder: (context) => PlaceTrackerApp()),
+//                         );
+//                       }
+//                     } catch (e) {
+//                       print('Error during Apple sign in: $e');
+//                       ScaffoldMessenger.of(context).showSnackBar(
+//                         SnackBar(content: Text('Failed to sign in with Apple')),
+//                       );
+//                     }
+//                   },
+//                 ),
+//               ),
+//             ],
+//           ),
+//         ),
+//       ),
+//     );
+//   }
+// }
 
 =================================================================
 
 File: app/lib/main.dart
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'place_tracker_app.dart';
-import 'app_state.dart';
-import 'login_page.dart';
+import 'scuttlebutt_app.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  try {
-    await Firebase.initializeApp();
-    print("Firebase initialized successfully");
-
-    try {
-      await FirebaseFirestore.instance.collection('test').limit(1).get();
-      print("Firestore connection successful");
-    } catch (e) {
-      print("Error testing Firestore connection: $e");
-      if (e is FirebaseException) {
-        print("Firebase Exception Code: ${e.code}");
-        print("Firebase Exception Message: ${e.message}");
-      }
-    }
-  } catch (e) {
-    print("Error initializing Firebase: $e");
-    if (e is FirebaseException) {
-      print("Firebase Exception Code: ${e.code}");
-      print("Firebase Exception Message: ${e.message}");
-    }
-  }
-
-  SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
-    statusBarIconBrightness: Brightness.dark,
-    statusBarBrightness: Brightness.light,
-  ));
-
-  runApp(MyApp());
+  await Firebase.initializeApp();
+  runApp(ScuttlebuttApp());
 }
 
-class MyApp extends StatelessWidget {
+=================================================================
+
+File: app/lib/messages_screen.dart
+
+import 'package:flutter/material.dart';
+
+class MessagesScreen extends StatelessWidget {
+  const MessagesScreen({Key? key}) : super(key: key);
+
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (context) => AppState(),
-      child: MaterialApp(
-        home: AuthWrapper(),
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Messages'),
+      ),
+      body: Center(
+        child: Text('Messages screen - To be implemented'),
       ),
     );
   }
 }
 
-class AuthWrapper extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Scaffold(body: Center(child: CircularProgressIndicator()));
-        }
-
-        if (snapshot.hasData && snapshot.data != null) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            Provider.of<AppState>(context, listen: false)
-                .initializeUser(snapshot.data!.uid)
-                .catchError((error) {
-              print('Error initializing user: $error');
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                    content:
-                        Text('Error loading user data. Please try again.')),
-              );
-            });
-          });
-          return PlaceTrackerApp();
-        }
-
-        return LoginPage();
-      },
-    );
-  }
-}
-
 =================================================================
 
-File: app/lib/place.dart
-
-import 'package:google_maps_flutter/google_maps_flutter.dart';
-
-class Place {
-  final String id;
-  final LatLng latLng;
-  final String name;
-  final PlaceCategory category;
-  final String? description;
-  final int starRating;
-
-  const Place({
-    required this.id,
-    required this.latLng,
-    required this.name,
-    required this.category,
-    this.description,
-    this.starRating = 0,
-  }) : assert(starRating >= 0 && starRating <= 5);
-
-  double get latitude => latLng.latitude;
-
-  double get longitude => latLng.longitude;
-
-  Place copyWith({
-    String? id,
-    LatLng? latLng,
-    String? name,
-    PlaceCategory? category,
-    String? description,
-    int? starRating,
-  }) {
-    return Place(
-      id: id ?? this.id,
-      latLng: latLng ?? this.latLng,
-      name: name ?? this.name,
-      category: category ?? this.category,
-      description: description ?? this.description,
-      starRating: starRating ?? this.starRating,
-    );
-  }
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is Place && runtimeType == other.runtimeType && id == other.id;
-
-  @override
-  int get hashCode =>
-      id.hashCode ^
-      latLng.hashCode ^
-      name.hashCode ^
-      category.hashCode ^
-      description.hashCode ^
-      starRating.hashCode;
-}
-
-enum PlaceCategory {
-  favorite,
-  visited,
-  wantToGo,
-}
-
-=================================================================
-
-File: app/lib/place_details.dart
+File: app/lib/post_screen.dart
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Import this package
-import 'package:url_launcher/url_launcher.dart';
+import 'package:provider/provider.dart';
+import 'app_state.dart';
 
-class PlaceDetails extends StatelessWidget {
-  final String name;
-  final String address;
-  final String website;
-  final double rating;
-  final int userRatingsTotal;
-  final List<String> reviews;
-  final List<String> photoReferences;
+class PostScreen extends StatefulWidget {
+  const PostScreen({Key? key}) : super(key: key);
 
-  const PlaceDetails({
-    Key? key,
-    required this.name,
-    required this.address,
-    required this.website,
-    required this.rating,
-    required this.userRatingsTotal,
-    required this.reviews,
-    required this.photoReferences,
-  }) : super(key: key);
+  @override
+  _PostScreenState createState() => _PostScreenState();
+}
 
-  Future<void> _launchURL(String url) async {
-    final Uri uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      throw 'Could not launch $url';
-    }
-  }
-
-  String _photoUrl(String photoReference) {
-    return 'https://maps.googleapis.com/maps/api/place/photo'
-        '?maxwidth=400'
-        '&photoreference=$photoReference'
-        '&key=AIzaSyDKTZVwlg1SO-JlyAH3LZd0F4qYsbjdh3g';
-  }
+class _PostScreenState extends State<PostScreen> {
+  final TextEditingController _postController = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
-    // Set the status bar color to dark to make the text and icons visible
-    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
-      statusBarIconBrightness: Brightness.dark, // Dark icons and text
-      statusBarBrightness: Brightness.light, // For iOS
-    ));
-
     return Scaffold(
       appBar: AppBar(
-        title: Text(name),
-        backgroundColor: Color(0xFF8C1515),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            Navigator.pop(context);
-          },
-        ),
+        title: Text('Create Post'),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(name,
-                  style: const TextStyle(
-                      fontSize: 24, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              Text(address, style: const TextStyle(fontSize: 18)),
-              const SizedBox(height: 8),
-              GestureDetector(
-                onTap: () {
-                  _launchURL(website);
-                },
-                child: Text(website,
-                    style: const TextStyle(fontSize: 18, color: Colors.blue)),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  const Icon(Icons.star, color: Colors.amber, size: 24),
-                  const SizedBox(width: 4),
-                  Text('$rating ($userRatingsTotal reviews)',
-                      style: const TextStyle(fontSize: 18)),
-                ],
-              ),
-              const SizedBox(height: 16),
-              const Text('Photos',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 200,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: photoReferences.length,
-                  itemBuilder: (context, index) {
-                    return Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Image.network(_photoUrl(photoReferences[index])),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text('Reviews',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              Column(
-                children: reviews
-                    .map((review) => Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(review),
-                              const Divider(),
-                            ],
-                          ),
-                        ))
-                    .toList(),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-=================================================================
-
-File: app/lib/place_list.dart
-
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'app_state.dart';
-import 'place_details.dart';
-
-class PlaceListScreen extends StatelessWidget {
-  const PlaceListScreen({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    var state = Provider.of<AppState>(context);
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'My Lists',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-              ),
-              FloatingActionButton(
-                onPressed: () {
-                  _showAddListDialog(context);
-                },
-                child: Icon(Icons.add),
-                backgroundColor: Color(0xFF8C1515),
-                mini: true,
-              ),
-            ],
-          ),
-        ),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: NeverScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(8.0),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 8.0,
-            mainAxisSpacing: 8.0,
-            childAspectRatio: 1.0,
-          ),
-          itemCount: state.lists.length,
-          itemBuilder: (context, index) {
-            final list = state.lists[index];
-            return GestureDetector(
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => ListDetails(listId: list.id),
-                  ),
-                );
-              },
-              child: Card(
-                elevation: 4.0,
-                color: Colors.white,
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        list.name,
-                        style: TextStyle(
-                          fontSize: 18.0,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black,
-                        ),
-                      ),
-                      SizedBox(height: 8.0),
-                      Text(
-                        '${list.places.length} places',
-                        style: TextStyle(
-                          fontSize: 14.0,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                      Text(
-                        list.isPublic ? 'Public' : 'Private',
-                        style: TextStyle(
-                          fontSize: 14.0,
-                          color: list.isPublic ? Colors.green : Colors.red,
-                        ),
-                      ),
-                      Spacer(),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          IconButton(
-                            icon:
-                                Icon(list.isPublic ? Icons.public : Icons.lock),
-                            onPressed: () {
-                              state.toggleListPublicStatus(list.id);
-                            },
-                          ),
-                          IconButton(
-                            icon: Icon(Icons.delete, color: Colors.red),
-                            onPressed: () {
-                              state.deleteList(list.id);
-                            },
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
-      ],
-    );
-  }
-
-  void _showAddListDialog(BuildContext context) {
-    final TextEditingController _listNameController = TextEditingController();
-    bool isPublic = false;
-
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: Text('Add New List'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: _listNameController,
-                    decoration: InputDecoration(hintText: 'Enter list name'),
-                  ),
-                  SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Text('Public:'),
-                      Switch(
-                        value: isPublic,
-                        onChanged: (value) {
-                          setState(() {
-                            isPublic = value;
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  child: Text('Cancel'),
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                  },
-                ),
-                TextButton(
-                  child: Text('Add'),
-                  onPressed: () {
-                    if (_listNameController.text.isNotEmpty) {
-                      Provider.of<AppState>(context, listen: false).createList(
-                          _listNameController.text,
-                          isPublic: isPublic);
-                      Navigator.of(context).pop();
-                    }
-                  },
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-}
-
-class ListDetails extends StatelessWidget {
-  final String listId;
-
-  const ListDetails({Key? key, required this.listId}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Consumer<AppState>(
-      builder: (context, state, child) {
-        return FutureBuilder<PlaceList>(
-          future: state.getListDetails(listId),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return Scaffold(
-                appBar: AppBar(title: Text('Loading...')),
-                body: Center(child: CircularProgressIndicator()),
-              );
-            }
-
-            if (snapshot.hasError) {
-              return Scaffold(
-                appBar: AppBar(title: Text('Error')),
-                body: Center(child: Text('Failed to load list details')),
-              );
-            }
-
-            final list = snapshot.data!;
-
-            return Scaffold(
-              appBar: AppBar(
-                title: Text(list.name),
-                backgroundColor: Color(0xFF8C1515),
-                actions: [
-                  if (list.creatorId == state.userId)
-                    IconButton(
-                      icon: Icon(Icons.edit),
-                      onPressed: () async {
-                        String? newName =
-                            await _showRenameDialog(context, list.name);
-                        if (newName != null && newName.isNotEmpty) {
-                          state.renameList(list.id, newName);
-                        }
-                      },
-                    ),
-                  if (list.creatorId == state.userId)
-                    IconButton(
-                      icon: Icon(list.isPublic ? Icons.public : Icons.lock),
-                      onPressed: () {
-                        state.toggleListPublicStatus(list.id);
-                      },
-                    ),
-                ],
-              ),
-              body: list.places.isEmpty
-                  ? Center(
-                      child: Text('No places added to this list yet.'),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(8.0),
-                      itemCount: list.places.length,
-                      itemBuilder: (context, index) {
-                        final place = list.places[index];
-                        return Card(
-                          elevation: 2.0,
-                          color: Colors.white,
-                          margin: EdgeInsets.symmetric(vertical: 4.0),
-                          child: ListTile(
-                            title: Text(
-                              place.name,
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black87,
-                              ),
-                            ),
-                            subtitle: Text(
-                              place.vicinity ?? 'No address available',
-                              style: TextStyle(color: Colors.black54),
-                            ),
-                            trailing: list.creatorId == state.userId
-                                ? IconButton(
-                                    icon: Icon(Icons.delete, color: Colors.red),
-                                    onPressed: () {
-                                      state.removePlaceFromList(
-                                          listId, place.id);
-                                    },
-                                  )
-                                : null,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => PlaceDetails(
-                                    name: place.name,
-                                    address: place.vicinity ??
-                                        'No address available',
-                                    website:
-                                        place.website ?? 'No website available',
-                                    rating: place.rating ?? 0.0,
-                                    userRatingsTotal:
-                                        place.userRatingsTotal ?? 0,
-                                    reviews: place.reviews ?? [],
-                                    photoReferences:
-                                        place.photoReferences ?? [],
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        );
-                      },
-                    ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Future<String?> _showRenameDialog(BuildContext context, String currentName) {
-    final TextEditingController _controller =
-        TextEditingController(text: currentName);
-    return showDialog<String>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Rename List'),
-          content: TextField(
-            controller: _controller,
-            decoration: const InputDecoration(
-              labelText: 'New name',
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('Cancel'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-            TextButton(
-              child: const Text('Rename'),
-              onPressed: () {
-                Navigator.of(context).pop(_controller.text);
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-=================================================================
-
-File: app/lib/place_map.dart
-
-import 'dart:async';
-import 'dart:convert';
-import 'dart:math';
-import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:http/http.dart' as http;
-import 'package:geolocator/geolocator.dart';
-import 'package:provider/provider.dart';
-import 'app_state.dart';
-import 'place_details.dart';
-
-class PlaceMap extends StatefulWidget {
-  const PlaceMap({Key? key}) : super(key: key);
-
-  @override
-  _PlaceMapState createState() => _PlaceMapState();
-}
-
-class _PlaceMapState extends State<PlaceMap> {
-  Completer<GoogleMapController> mapController = Completer();
-  MapType _currentMapType = MapType.normal;
-  LatLng? _lastMapPosition;
-  final Set<Marker> _markers = {};
-  final Set<Marker> _savedPlaceMarkers = {};
-  final Set<Marker> _followedPlaceMarkers = {};
-  final TextEditingController _searchController = TextEditingController();
-  List<dynamic> _searchResults = [];
-  bool _isSearching = false;
-  LatLng? _currentLocation;
-  late Future<void> _initializationFuture;
-
-  bool _showMyLists = false;
-  bool _showFollowingLists = false;
-
-  static const String _apiKey = 'AIzaSyDKTZVwlg1SO-JlyAH3LZd0F4qYsbjdh3g';
-
-  @override
-  void initState() {
-    super.initState();
-    _initializationFuture = _initializeData();
-  }
-
-  Future<void> _initializeData() async {
-    final appState = Provider.of<AppState>(context, listen: false);
-    await _getCurrentLocation();
-    await _loadSavedPlaces();
-    await _loadFollowedPlaces();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder(
-      future: _initializationFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(child: CircularProgressIndicator());
-        } else if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
-        } else {
-          return _buildMap();
-        }
-      },
-    );
-  }
-
-  Widget _buildMap() {
-    return SafeArea(
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8.0),
-            child: TextField(
-              controller: _searchController,
+        child: Column(
+          children: [
+            TextField(
+              controller: _postController,
               decoration: InputDecoration(
-                hintText: 'Search for places',
-                suffixIcon: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_searchController.text.isNotEmpty)
-                      IconButton(
-                        icon: Icon(Icons.clear),
-                        onPressed: _clearSearch,
-                      ),
-                    IconButton(
-                      icon: Icon(Icons.search),
-                      onPressed: _performSearch,
-                    ),
-                  ],
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8.0),
-                ),
+                hintText: 'What\'s on your mind?',
+                border: OutlineInputBorder(),
               ),
-              onSubmitted: (value) => _performSearch(),
-              onChanged: (value) {
-                setState(() {});
-              },
+              maxLines: 5,
             ),
-          ),
-          Expanded(
-            child: Stack(
-              children: [
-                GoogleMap(
-                  onMapCreated: (controller) => onMapCreated(controller),
-                  initialCameraPosition: CameraPosition(
-                    target: _currentLocation ?? LatLng(0, 0),
-                    zoom: 15.0,
-                  ),
-                  mapType: _currentMapType,
-                  markers: _getFilteredMarkers(),
-                  myLocationEnabled: true,
-                  myLocationButtonEnabled: false,
-                  zoomGesturesEnabled: true,
-                  scrollGesturesEnabled: true,
-                  tiltGesturesEnabled: true,
-                  rotateGesturesEnabled: true,
-                  onCameraMove: (position) {
-                    _lastMapPosition = position.target;
-                  },
-                ),
-                Positioned(
-                  bottom: 16,
-                  right: 16,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      FloatingActionButton(
-                        onPressed: () {
-                          _showFilterOptions(context);
-                        },
-                        child: Icon(Icons.filter_list),
-                        heroTag: null,
-                      ),
-                      SizedBox(height: 8),
-                      FloatingActionButton(
-                        onPressed: _moveToCurrentLocation,
-                        child: Icon(Icons.my_location),
-                        heroTag: null,
-                      ),
-                    ],
-                  ),
-                ),
-                if (_searchResults.isNotEmpty)
-                  DraggableScrollableSheet(
-                    initialChildSize: 0.3,
-                    minChildSize: 0.1,
-                    maxChildSize: 0.75,
-                    builder: (context, scrollController) {
-                      return Container(
-                        color: Colors.white,
-                        child: Scrollbar(
-                          controller: scrollController,
-                          thumbVisibility: true,
-                          child: ListView.builder(
-                            controller: scrollController,
-                            itemCount: _searchResults.length,
-                            itemBuilder: (context, index) {
-                              final place = _searchResults[index];
-                              return ListTile(
-                                title: Text(place['name']),
-                                subtitle: Text(place['formatted_address']),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        Text('${place['rating'] ?? 'N/A'}'),
-                                        Text(
-                                            '(${place['user_ratings_total'] ?? '0'} ratings)'),
-                                      ],
-                                    ),
-                                    IconButton(
-                                      icon: Icon(Icons.add),
-                                      onPressed: () {
-                                        _showAddToListDialog(context, place);
-                                      },
-                                    ),
-                                  ],
-                                ),
-                                onTap: () {
-                                  _goToPlace(place);
-                                },
-                              );
-                            },
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showFilterOptions(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setState) {
-            return AlertDialog(
-              title: Text('Filter Options'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  CheckboxListTile(
-                    title: Text('My Lists'),
-                    value: _showMyLists,
-                    onChanged: (bool? value) {
-                      setState(() {
-                        _showMyLists = value!;
-                      });
-                    },
-                  ),
-                  CheckboxListTile(
-                    title: Text('Following Lists'),
-                    value: _showFollowingLists,
-                    onChanged: (bool? value) {
-                      setState(() {
-                        _showFollowingLists = value!;
-                      });
-                    },
-                  ),
-                ],
-              ),
-              actions: <Widget>[
-                TextButton(
-                  child: Text('Apply'),
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    this.setState(() {}); // Refresh the map
-                  },
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Set<Marker> _getFilteredMarkers() {
-    Set<Marker> filteredMarkers = Set.from(_markers); // Include search result markers
-
-    if (_showMyLists) {
-      filteredMarkers.addAll(_savedPlaceMarkers);
-    }
-
-    if (_showFollowingLists) {
-      filteredMarkers.addAll(_followedPlaceMarkers);
-    }
-
-    if (_showMyLists && _showFollowingLists) {
-      Set<String> myPlaceIds =
-          _savedPlaceMarkers.map((m) => m.markerId.value).toSet();
-      Set<String> followedPlaceIds =
-          _followedPlaceMarkers.map((m) => m.markerId.value).toSet();
-      Set<String> overlapPlaceIds = myPlaceIds.intersection(followedPlaceIds);
-
-      for (String placeId in overlapPlaceIds) {
-        Marker? myMarker =
-            _savedPlaceMarkers.firstWhere((m) => m.markerId.value == placeId);
-        Marker purpleMarker = myMarker.copyWith(
-          iconParam:
-              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
-          infoWindowParam: InfoWindow(
-            title: myMarker.infoWindow.title,
-            snippet: 'In My List and Following List',
-          ),
-        );
-        filteredMarkers.add(purpleMarker);
-        filteredMarkers.removeWhere(
-            (m) => m.markerId.value == placeId && m != purpleMarker);
-      }
-    }
-
-    return filteredMarkers;
-  }
-
-  Future<void> _getCurrentLocation() async {
-    bool serviceEnabled;
-    LocationPermission permission;
-
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      return;
-    }
-
-    permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        return;
-      }
-    }
-
-    if (permission == LocationPermission.deniedForever) {
-      return;
-    }
-
-    Position position = await Geolocator.getCurrentPosition();
-    setState(() {
-      _currentLocation = LatLng(position.latitude, position.longitude);
-    });
-
-    _moveToCurrentLocation();
-  }
-
-  Future<void> _moveToCurrentLocation() async {
-    if (_currentLocation != null) {
-      final GoogleMapController controller = await mapController.future;
-      controller
-          .animateCamera(CameraUpdate.newLatLngZoom(_currentLocation!, 15));
-    }
-  }
-
-  Future<void> _loadSavedPlaces() async {
-    final appState = Provider.of<AppState>(context, listen: false);
-    for (var list in appState.lists) {
-      for (var place in list.places) {
-        if (place.latitude != null && place.longitude != null) {
-          final LatLng position = LatLng(place.latitude!, place.longitude!);
-          final marker = Marker(
-            markerId: MarkerId(place.id),
-            position: position,
-            icon:
-                BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRose),
-            infoWindow: InfoWindow(
-              title: place.name,
-              snippet: 'My List: ${list.name}',
-              onTap: () {
-                _showPlaceDetails(place);
-              },
-            ),
-          );
-          _savedPlaceMarkers.add(marker);
-        }
-      }
-    }
-  }
-
-  Future<void> _loadFollowedPlaces() async {
-    final appState = Provider.of<AppState>(context, listen: false);
-    List<Place> followedPlaces = await appState.getFollowedListsPlaces();
-    for (var place in followedPlaces) {
-      if (place.latitude != null && place.longitude != null) {
-        final LatLng position = LatLng(place.latitude!, place.longitude!);
-        final marker = Marker(
-          markerId: MarkerId(place.id),
-          position: position,
-          icon:
-              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-          infoWindow: InfoWindow(
-            title: place.name,
-            snippet: 'Followed List: ${place.listName}',
-            onTap: () {
-              _showPlaceDetails(place);
-            },
-          ),
-        );
-        _followedPlaceMarkers.add(marker);
-      }
-    }
-  }
-
-  Future<void> onMapCreated(GoogleMapController controller) async {
-    if (!mapController.isCompleted) {
-      mapController.complete(controller);
-    }
-    _lastMapPosition = _currentLocation ?? LatLng(0, 0);
-  }
-
-  void _clearSearch() {
-    _searchController.clear();
-    setState(() {
-      _searchResults = [];
-      _markers.clear();
-    });
-  }
-
-  void _performSearch() async {
-    if (_searchController.text.isEmpty) return;
-
-    setState(() {
-      _isSearching = true;
-    });
-
-    final searchQuery = Uri.encodeComponent(_searchController.text);
-    final response = await http.get(
-      Uri.parse(
-        'https://maps.googleapis.com/maps/api/place/textsearch/json'
-        '?query=$searchQuery'
-        '&key=$_apiKey',
-      ),
-    );
-
-    if (response.statusCode == 200) {
-      final results = json.decode(response.body)['results'];
-      if (!mounted) return;
-      setState(() {
-        _searchResults = results;
-        _isSearching = false;
-        _markers.clear();
-        for (var place in _searchResults) {
-          final marker = Marker(
-            markerId: MarkerId(place['place_id']),
-            position: LatLng(
-              place['geometry']['location']['lat'],
-              place['geometry']['location']['lng'],
-            ),
-            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-            infoWindow: InfoWindow(
-              title: place['name'],
-              snippet: place['formatted_address'],
-              onTap: () {
-                _goToPlace(place);
-              },
-            ),
-          );
-          _markers.add(marker);
-        }
-        
-        if (_searchResults.isNotEmpty) {
-          _moveToSearchResults();
-        }
-      });
-    } else {
-      if (!mounted) return;
-      setState(() {
-        _isSearching = false;
-      });
-      throw Exception('Failed to load places');
-    }
-  }
-
-  void _moveToSearchResults() {
-    final bounds = _calculateBounds(_searchResults);
-    mapController.future.then((controller) {
-      controller.animateCamera(CameraUpdate.newLatLngBounds(bounds, 50));
-    });
-  }
-
-  LatLngBounds _calculateBounds(List<dynamic> results) {
-    double? minLat, maxLat, minLng, maxLng;
-
-    for (var place in results) {
-      final lat = place['geometry']['location']['lat'];
-      final lng = place['geometry']['location']['lng'];
-
-      minLat = minLat != null ? min(minLat, lat) : lat;
-      maxLat = maxLat != null ? max(maxLat, lat) : lat;
-      minLng = minLng != null ? min(minLng, lng) : lng;
-      maxLng = maxLng != null ? max(maxLng, lng) : lng;
-    }
-
-    return LatLngBounds(
-      southwest: LatLng(minLat!, minLng!),
-      northeast: LatLng(maxLat!, maxLng!),
-    );
-  }
-
-Future<Map<String, dynamic>> fetchPlaceDetails(String placeId) async {
-    final response = await http.get(
-      Uri.parse(
-        'https://maps.googleapis.com/maps/api/place/details/json'
-        '?place_id=$placeId'
-        '&fields=name,rating,user_ratings_total,formatted_address,geometry,photos,opening_hours,website,reviews'
-        '&key=$_apiKey',
-      ),
-    );
-
-    if (response.statusCode == 200) {
-      return json.decode(response.body)['result'];
-    } else {
-      throw Exception('Failed to load place details');
-    }
-  }
-
-  void _goToPlace(Map<String, dynamic> place) async {
-    final GoogleMapController controller = await mapController.future;
-    final LatLng latLng = LatLng(place['geometry']['location']['lat'],
-        place['geometry']['location']['lng']);
-    controller.animateCamera(CameraUpdate.newLatLngZoom(latLng, 15.0));
-
-    if (!mounted) return;
-    setState(() {
-      _isSearching = false;
-    });
-
-    final placeDetails = await fetchPlaceDetails(place['place_id']);
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => PlaceDetails(
-          name: placeDetails['name'] ?? '',
-          address: placeDetails['formatted_address'] ?? '',
-          website: placeDetails['website'] ?? '',
-          rating: placeDetails['rating']?.toDouble() ?? 0.0,
-          userRatingsTotal: placeDetails['user_ratings_total'] ?? 0,
-          reviews: (placeDetails['reviews'] as List<dynamic>?)
-                  ?.map((review) => review['text'] as String)
-                  .toList() ??
-              [],
-          photoReferences: (placeDetails['photos'] as List<dynamic>?)
-                  ?.map((photo) => photo['photo_reference'] as String)
-                  .toList() ??
-              [],
-        ),
-      ),
-    );
-  }
-
-  void _showAddToListDialog(BuildContext context, Map<String, dynamic> place) {
-    final appState = Provider.of<AppState>(context, listen: false);
-    final listsContainingPlace =
-        appState.getListsContainingPlace(place['place_id']);
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text('Add ${place['name']} to list'),
-          content: SingleChildScrollView(
-            child: ListBody(
-              children: appState.lists.map((list) {
-                final isDisabled = listsContainingPlace.contains(list.id);
-                return ListTile(
-                  title: Text(list.name),
-                  enabled: !isDisabled,
-                  textColor: isDisabled ? Colors.grey : null,
-                  trailing: IconButton(
-                    icon: Icon(Icons.add),
-                    onPressed: isDisabled
-                        ? null
-                        : () async {
-                            try {
-                              await appState.addPlaceToList(
-                                  list.id, place['place_id']);
-                              Navigator.of(context).pop();
-                              _loadSavedPlaces();
-                            } catch (e) {
-                              print('Error adding place to list: $e');
-                            }
-                          },
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('Cancel'),
+            SizedBox(height: 16),
+            ElevatedButton(
               onPressed: () {
-                Navigator.of(context).pop();
+                if (_postController.text.isNotEmpty) {
+                  Provider.of<AppState>(context, listen: false)
+                      .createPost(_postController.text);
+                  _postController.clear();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Post created successfully')),
+                  );
+                }
               },
+              child: Text('Post'),
             ),
           ],
-        );
-      },
-    );
-  }
-
-  void _showPlaceDetails(Place place) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => PlaceDetails(
-          name: place.name,
-          address: place.vicinity ?? '',
-          website: place.website ?? '',
-          rating: place.rating ?? 0.0,
-          userRatingsTotal: place.userRatingsTotal ?? 0,
-          reviews: place.reviews ?? [],
-          photoReferences: place.photoReferences ?? [],
         ),
-      ),
-    );
-  }
-}
-
-=================================================================
-
-File: app/lib/place_tracker_app.dart
-
-import 'package:flutter/material.dart';
-import 'search_screen.dart';
-import 'profile_screen.dart';
-import 'settings_screen.dart';
-import 'home_screen.dart';
-
-class PlaceTrackerApp extends StatelessWidget {
-  const PlaceTrackerApp({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: const Color(0xFF8C1515),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF8C1515),
-          foregroundColor: Colors.white,
-        ),
-        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-          selectedItemColor: Color(0xFF8C1515),
-          unselectedItemColor: Colors.grey,
-        ),
-        floatingActionButtonTheme: const FloatingActionButtonThemeData(
-          backgroundColor: Color(0xFF8C1515),
-          foregroundColor: Colors.white,
-        ),
-      ),
-      home: PlaceTrackerHomePage(),
-    );
-  }
-}
-
-class PlaceTrackerHomePage extends StatefulWidget {
-  const PlaceTrackerHomePage({Key? key}) : super(key: key);
-
-  @override
-  State<PlaceTrackerHomePage> createState() => _PlaceTrackerHomePageState();
-}
-
-class _PlaceTrackerHomePageState extends State<PlaceTrackerHomePage> {
-  int _selectedIndex = 0;
-
-  final List<Widget> _widgetOptions = <Widget>[
-    const HomeScreen(),
-    const SearchScreen(),
-    const ProfileScreen(),
-  ];
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
-
-  void _openSettings() {
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        opaque: false,
-        pageBuilder: (BuildContext context, _, __) {
-          return const SettingsScreen();
-        },
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          const begin = Offset(1.0, 0.0);
-          const end = Offset.zero;
-          const curve = Curves.easeInOut;
-          var tween =
-              Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
-          var offsetAnimation = animation.drive(tween);
-          return SlideTransition(position: offsetAnimation, child: child);
-        },
       ),
     );
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Scuttlebutt'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.menu),
-            onPressed: _openSettings,
-          ),
-        ],
-      ),
-      body: _widgetOptions.elementAt(_selectedIndex),
-      bottomNavigationBar: BottomNavigationBar(
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.search),
-            label: 'Search',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Profile',
-          ),
-        ],
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        showUnselectedLabels: true,
-      ),
-    );
+  void dispose() {
+    _postController.dispose();
+    super.dispose();
   }
 }
 
@@ -2481,802 +504,128 @@ File: app/lib/profile_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'app_state.dart';
-import 'place_list.dart';
-import 'user_profile_screen.dart';
 
-class ProfileScreen extends StatefulWidget {
+class ProfileScreen extends StatelessWidget {
   const ProfileScreen({Key? key}) : super(key: key);
 
   @override
-  _ProfileScreenState createState() => _ProfileScreenState();
-}
-
-class _ProfileScreenState extends State<ProfileScreen> {
-  bool _showMyLists = true;
-
-  @override
-  Widget build(BuildContext context) {
-    final appState = Provider.of<AppState>(context);
-
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                CircleAvatar(
-                  radius: 40,
-                  backgroundImage: AssetImage('assets/profile_picture.png'),
-                ),
-                SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        appState.displayName ?? 'Set your display name',
-                        style: TextStyle(
-                            fontSize: 24, fontWeight: FontWeight.bold),
-                      ),
-                      Text(
-                        '@${appState.userName ?? 'Set your username'}',
-                        style: TextStyle(fontSize: 18, color: Colors.grey),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        appState.bio ?? 'Add a bio',
-                        style: TextStyle(fontSize: 16),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _buildFollowColumn('Followers',
-                    appState.followers?.length.toString() ?? '0', context),
-                _buildFollowColumn('Following',
-                    appState.following?.length.toString() ?? '0', context),
-                ElevatedButton(
-                  onPressed: () {
-                    _showEditProfileDialog(context, appState);
-                  },
-                  child: Text('Edit Profile'),
-                ),
-              ],
-            ),
-          ),
-          SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: SegmentedButton<bool>(
-              segments: const [
-                ButtonSegment(value: true, label: Text('My Lists')),
-                ButtonSegment(value: false, label: Text('Following Lists')),
-              ],
-              selected: {_showMyLists},
-              onSelectionChanged: (Set<bool> newSelection) {
-                setState(() {
-                  _showMyLists = newSelection.first;
-                });
-              },
-              showSelectedIcon: false,
-            ),
-          ),
-          SizedBox(height: 16),
-          _showMyLists ? PlaceListScreen() : FollowingListsScreen(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFollowColumn(String title, String count, BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        _showFollowList(context, title);
-      },
-      child: Column(
-        children: [
-          Text(
-            count,
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          Text(title),
-        ],
-      ),
-    );
-  }
-
-  void _showFollowList(BuildContext context, String title) {
-    final appState = Provider.of<AppState>(context, listen: false);
-    List<String> userIds = title == 'Followers'
-        ? appState.followers ?? []
-        : appState.following ?? [];
-
-    showModalBottomSheet(
-      context: context,
-      builder: (BuildContext context) {
-        return Container(
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Text(
-                  title,
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-              ),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: userIds.length,
-                  itemBuilder: (context, index) {
-                    return FutureBuilder<Map<String, dynamic>>(
-                      future: appState.getUserProfile(userIds[index]),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return ListTile(
-                            leading: CircularProgressIndicator(),
-                            title: Text('Loading...'),
-                          );
-                        }
-                        if (snapshot.hasError) {
-                          return ListTile(
-                            title: Text('Error loading user'),
-                          );
-                        }
-                        final userData = snapshot.data!;
-                        return ListTile(
-                          leading: CircleAvatar(
-                            backgroundImage:
-                                AssetImage('assets/profile_picture.png'),
-                          ),
-                          title: Text(userData['userName'] ?? 'Unknown'),
-                          subtitle: Text(userData['displayName'] ?? ''),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    UserProfileScreen(userId: userIds[index]),
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  void _showEditProfileDialog(BuildContext context, AppState appState) {
-    final TextEditingController displayNameController =
-        TextEditingController(text: appState.displayName);
-    final TextEditingController userNameController =
-        TextEditingController(text: appState.userName);
-    final TextEditingController bioController =
-        TextEditingController(text: appState.bio);
-
-    bool isUserNameValid = true;
-
-    showDialog(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: Text('Edit Profile'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: displayNameController,
-                      decoration: InputDecoration(labelText: 'Display Name'),
-                    ),
-                    TextField(
-                      controller: userNameController,
-                      decoration: InputDecoration(
-                        labelText: 'Username',
-                        errorText:
-                            isUserNameValid ? null : 'Invalid username format',
-                        helperText:
-                            'Only letters, numbers, periods, and underscores allowed',
-                        helperMaxLines: 2,
-                      ),
-                      onChanged: (value) {
-                        setState(() {
-                          isUserNameValid = appState.isValidUserName(value);
-                        });
-                      },
-                    ),
-                    TextField(
-                      controller: bioController,
-                      decoration: InputDecoration(labelText: 'Bio'),
-                      maxLines: null,
-                      keyboardType: TextInputType.multiline,
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-TextButton(
-                  child: Text('Cancel'),
-                  onPressed: () {
-                    Navigator.of(dialogContext).pop();
-                  },
-                ),
-                TextButton(
-                  child: Text('Save'),
-                  onPressed: isUserNameValid
-                      ? () {
-                          Navigator.of(dialogContext).pop();
-                          appState
-                              .updateUserProfile(
-                            newDisplayName: displayNameController.text,
-                            newUserName: userNameController.text,
-                            newBio: bioController.text,
-                          )
-                              .then((_) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                  content:
-                                      Text('Profile updated successfully')),
-                            );
-                          }).catchError((error) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                  content:
-                                      Text('Error updating profile: $error')),
-                            );
-                          });
-                        }
-                      : null,
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-}
-
-class FollowingListsScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final appState = Provider.of<AppState>(context);
-
-    return FutureBuilder<List<PlaceList>>(
-      future: appState.getFollowedLists(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(child: CircularProgressIndicator());
-        }
-
-        if (snapshot.hasError) {
-          return Center(child: Text('Error loading followed lists'));
-        }
-
-        final followedLists = snapshot.data ?? [];
-
-        if (followedLists.isEmpty) {
-          return Center(child: Text('You are not following any lists yet.'));
-        }
-
-        return GridView.builder(
-          shrinkWrap: true,
-          physics: NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-          ),
-          itemCount: followedLists.length,
-          itemBuilder: (context, index) {
-            final list = followedLists[index];
-            return Card(
-              child: InkWell(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => ListDetails(listId: list.id),
-                    ),
-                  );
-                },
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.list, size: 48),
-                    SizedBox(height: 8),
-                    Text(list.name),
-                    FutureBuilder<Map<String, dynamic>>(
-                      future: appState.getUserProfile(list.creatorId),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return Text('Loading...');
-                        }
-                        if (snapshot.hasError) {
-                          return Text('Error');
-                        }
-                        final userData = snapshot.data!;
-                        return Text('@${userData['userName'] ?? 'Unknown'}',
-                            style: TextStyle(fontSize: 12));
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-}
-
-=================================================================
-
-File: app/lib/search_screen.dart
-
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'place_map.dart';
-import 'app_state.dart';
-import 'user_profile_screen.dart';
-
-class SearchScreen extends StatefulWidget {
-  const SearchScreen({Key? key}) : super(key: key);
-
-  @override
-  _SearchScreenState createState() => _SearchScreenState();
-}
-
-class _SearchScreenState extends State<SearchScreen>
-    with WidgetsBindingObserver {
-  bool _searchingPlaces = true;
-  Key _mapKey = UniqueKey();
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      setState(() {
-        _mapKey = UniqueKey();
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: SegmentedButton<bool>(
-            segments: const [
-              ButtonSegment(value: true, label: Text('Places')),
-              ButtonSegment(value: false, label: Text('People')),
-            ],
-            selected: {_searchingPlaces},
-            onSelectionChanged: (Set<bool> newSelection) {
-              setState(() {
-                _searchingPlaces = newSelection.first;
-              });
-            },
-            showSelectedIcon: false,
-          ),
-        ),
-        Expanded(
-          child: _searchingPlaces ? PlaceMap(key: _mapKey) : UserSearchScreen(),
-        ),
-      ],
-    );
-  }
-}
-
-class UserSearchScreen extends StatefulWidget {
-  @override
-  _UserSearchScreenState createState() => _UserSearchScreenState();
-}
-
-class _UserSearchScreenState extends State<UserSearchScreen> {
-  final TextEditingController _searchController = TextEditingController();
-  List<Map<String, dynamic>> _searchResults = [];
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: TextField(
-            controller: _searchController,
-            decoration: InputDecoration(
-              hintText: 'Search for people...',
-              prefixIcon: Icon(Icons.search),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8.0),
-              ),
-            ),
-            onChanged: (value) {
-              if (value.isNotEmpty) {
-                _performSearch(value);
-              } else {
-                setState(() {
-                  _searchResults.clear();
-                });
-              }
-            },
-          ),
-        ),
-        Expanded(
-          child: ListView.builder(
-            itemCount: _searchResults.length,
-            itemBuilder: (context, index) {
-              final user = _searchResults[index];
-              return ListTile(
-                leading: CircleAvatar(
-                  backgroundImage: user['photoURL'] != null
-                      ? NetworkImage(user['photoURL'])
-                      : AssetImage('assets/profile_picture.png')
-                          as ImageProvider,
-                ),
-                title: Text('@${user['userName']}'),
-                subtitle: Text(user['displayName'] ?? ''),
-                trailing: FollowButton(userId: user['id']),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) =>
-                          UserProfileScreen(userId: user['id']),
-                    ),
-                  );
-                },
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _performSearch(String query) async {
-    final appState = Provider.of<AppState>(context, listen: false);
-    final results = await appState.searchUsers(query);
-    setState(() {
-      _searchResults = results;
-    });
-  }
-}
-
-class FollowButton extends StatefulWidget {
-  final String userId;
-
-  const FollowButton({Key? key, required this.userId}) : super(key: key);
-
-  @override
-  _FollowButtonState createState() => _FollowButtonState();
-}
-
-class _FollowButtonState extends State<FollowButton> {
-  bool _isFollowing = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _checkFollowStatus();
-  }
-
-  Future<void> _checkFollowStatus() async {
-    final appState = Provider.of<AppState>(context, listen: false);
-    final following = await appState.isFollowing(widget.userId);
-    setState(() {
-      _isFollowing = following;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final appState = Provider.of<AppState>(context);
-
-    return ElevatedButton(
-      onPressed: () async {
-        if (_isFollowing) {
-          await appState.unfollowUser(widget.userId);
-        } else {
-          await appState.followUser(widget.userId);
-        }
-        setState(() {
-          _isFollowing = !_isFollowing;
-        });
-      },
-      child: Text(_isFollowing ? 'Unfollow' : 'Follow'),
-    );
-  }
-}
-
-=================================================================
-
-File: app/lib/settings_screen.dart
-
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:provider/provider.dart';
-import 'app_state.dart';
-
-class SettingsScreen extends StatelessWidget {
-  const SettingsScreen({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Settings'),
-        backgroundColor: const Color(0xFF8C1515),
-      ),
-      body: ListView(
-        children: [
-          ListTile(
-            leading: const Icon(Icons.exit_to_app),
-            title: const Text('Log Out'),
-            onTap: () async {
-              await FirebaseAuth.instance.signOut();
-              Provider.of<AppState>(context, listen: false).clearUserData();
-              Navigator.of(context).pushReplacementNamed('/');
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.delete_forever, color: Colors.red),
-            title: const Text('Delete Account',
-                style: TextStyle(color: Colors.red)),
-            onTap: () {
-              _showDeleteAccountConfirmation(context);
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showDeleteAccountConfirmation(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Delete Account'),
-          content: Text(
-              'Are you sure you want to delete your account? This action cannot be undone.'),
-          actions: <Widget>[
-            TextButton(
-              child: Text('Cancel'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-            TextButton(
-              child: Text('Delete', style: TextStyle(color: Colors.red)),
-              onPressed: () async {
-                Navigator.of(context).pop();
-                try {
-                  await Provider.of<AppState>(context, listen: false)
-                      .deleteAccount();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Account deleted successfully')),
-                  );
-                  Navigator.of(context).pushReplacementNamed('/');
-                } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to delete account: $e')),
-                  );
-                }
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-=================================================================
-
-File: app/lib/user_profile_screen.dart
-
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'app_state.dart';
-import 'place_list.dart';
-
-class UserProfileScreen extends StatefulWidget {
-  final String userId;
-
-  const UserProfileScreen({Key? key, required this.userId}) : super(key: key);
-
-  @override
-  _UserProfileScreenState createState() => _UserProfileScreenState();
-}
-
-class _UserProfileScreenState extends State<UserProfileScreen> {
-  bool _isFollowing = false;
-  Map<String, dynamic> _userProfile = {};
-  List<PlaceList> _publicLists = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadUserProfile();
-  }
-
-  Future<void> _loadUserProfile() async {
-    final appState = Provider.of<AppState>(context, listen: false);
-    final profile = await appState.getUserProfile(widget.userId);
-    final following = await appState.isFollowing(widget.userId);
-    final publicLists = await appState.getPublicListsForUser(widget.userId);
-    setState(() {
-      _userProfile = profile;
-      _isFollowing = following;
-      _publicLists = publicLists;
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('@${_userProfile['userName'] ?? ''}'),
+        title: Text('Profile'),
       ),
-      body: SingleChildScrollView(
+      body: Center(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  CircleAvatar(
-                    radius: 40,
-                    backgroundImage: AssetImage('assets/profile_picture.png'),
-                  ),
-                  SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _userProfile['displayName'] ?? '',
-                          style: TextStyle(
-                              fontSize: 24, fontWeight: FontWeight.bold),
-                        ),
-                        Text(
-                          '@${_userProfile['userName'] ?? ''}',
-                          style: TextStyle(fontSize: 18, color: Colors.grey),
-                        ),
-                        SizedBox(height: 8),
-                        Text(
-                          _userProfile['bio'] ?? '',
-                          style: TextStyle(fontSize: 16),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+            CircleAvatar(
+              radius: 50,
+              backgroundColor: Colors.blue,
+              child: Icon(Icons.person, size: 50, color: Colors.white),
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _buildFollowColumn('Followers',
-                      _userProfile['followers']?.length.toString() ?? '0'),
-                  _buildFollowColumn('Following',
-                      _userProfile['following']?.length.toString() ?? '0'),
-                  ElevatedButton(
-                    onPressed: () async {
-                      if (_isFollowing) {
-                        await appState.unfollowUser(widget.userId);
-                      } else {
-                        await appState.followUser(widget.userId);
-                      }
-                      setState(() {
-                        _isFollowing = !_isFollowing;
-                      });
-                    },
-                    child: Text(_isFollowing ? 'Unfollow' : 'Follow'),
-                  ),
-                ],
-              ),
+            SizedBox(height: 20),
+            Text(
+              'Anonymous User',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
-            SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Text(
-                'Public Lists',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
+            SizedBox(height: 10),
+            Text(
+              'Command: ${appState.command ?? "Not set"}',
+              style: TextStyle(fontSize: 18),
             ),
-            ListView.builder(
-              shrinkWrap: true,
-              physics: NeverScrollableScrollPhysics(),
-              itemCount: _publicLists.length,
-              itemBuilder: (context, index) {
-                final list = _publicLists[index];
-                return ListTile(
-                  title: Text(list.name),
-                  subtitle: Text('${list.places.length} places'),
-                  trailing: IconButton(
-                    icon: Icon(
-                      appState.followedLists?.contains(list.id) ?? false
-                          ? Icons.star
-                          : Icons.star_border,
-                    ),
-                    onPressed: () async {
-                      if (appState.followedLists?.contains(list.id) ?? false) {
-                        await appState.unfollowList(list.id);
-                      } else {
-                        await appState.followList(list.id);
-                      }
-                      setState(() {});
-                    },
-                  ),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => ListDetails(listId: list.id),
-                      ),
-                    );
-                  },
-                );
-              },
+            SizedBox(height: 20),
+            Text(
+              'Butts: 0',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
+            // Add more profile information and stats here
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _buildFollowColumn(String title, String count) {
-    return Column(
-      children: [
-        Text(
-          count,
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        Text(title),
-      ],
+=================================================================
+
+File: app/lib/scuttlebutt_app.dart
+
+import 'package:flutter/material.dart';
+import 'home_screen.dart';
+import 'messages_screen.dart';
+import 'profile_screen.dart';
+import 'post_screen.dart';
+
+class ScuttlebuttApp extends StatelessWidget {
+  const ScuttlebuttApp({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+        visualDensity: VisualDensity.adaptivePlatformDensity,
+      ),
+      home: ScuttlebuttHomePage(),
+    );
+  }
+}
+
+class ScuttlebuttHomePage extends StatefulWidget {
+  const ScuttlebuttHomePage({Key? key}) : super(key: key);
+
+  @override
+  _ScuttlebuttHomePageState createState() => _ScuttlebuttHomePageState();
+}
+
+class _ScuttlebuttHomePageState extends State<ScuttlebuttHomePage> {
+  int _selectedIndex = 0;
+
+  static const List<Widget> _widgetOptions = <Widget>[
+    HomeScreen(),
+    MessagesScreen(),
+    ProfileScreen(),
+    PostScreen(),
+  ];
+
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: _widgetOptions.elementAt(_selectedIndex),
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        items: const <BottomNavigationBarItem>[
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: 'Home',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.message),
+            label: 'Messages',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person),
+            label: 'Profile',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.add),
+            label: 'Post',
+          ),
+        ],
+        currentIndex: _selectedIndex,
+        selectedItemColor: Colors.blue,
+        unselectedItemColor: Colors.grey,
+        onTap: _onItemTapped,
+      ),
     );
   }
 }
@@ -3477,10 +826,10 @@ File: app/ios/Flutter/AppFrameworkInfo.plist
 
 File: app/pubspec.yaml
 
-name: Scuttlebutt
-description: A new Flutter project.
+name: scuttlebutt
+description: An anonymous social app for military personnel.
 
-version: 1.0.2+1
+version: 1.0.0+1
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -3488,35 +837,20 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.0
-  google_maps_flutter: ^2.2.0
-  provider: ^6.0.2
-  uuid: ^4.0.0
-  go_router: ^6.0.0
-  collection: ^1.16.0
-  http: ^0.13.4 
-  geolocator: ^9.0.1
-  url_launcher: ^6.0.9
+  cupertino_icons: ^1.0.2
   firebase_core: ^2.13.1
   firebase_auth: ^4.6.2
-  google_sign_in: ^6.1.3
   cloud_firestore: ^4.8.0
-  firebase_storage: ^11.0.0
-  image_picker: ^0.8.7+3
-  sign_in_with_apple: ^5.0.0
-  crypto: ^3.0.3
+  provider: ^6.0.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
 
 flutter:
+  uses-material-design: true
   assets:
     - assets/
-    - assets/google_logo.png
-    - assets/profile_picture.png
-    - assets/AppIcon-1024.png
-  uses-material-design: true
 =================================================================
 
 File: app/analysis_options.yaml
