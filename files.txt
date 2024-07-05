@@ -2,6 +2,7 @@ File: app/lib/app_state.dart
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class AppState extends ChangeNotifier {
   String? userId;
@@ -11,10 +12,22 @@ class AppState extends ChangeNotifier {
 
   Future<void> initializeUser(String uid) async {
     userId = uid;
-    // You can fetch additional user data from Firestore here if needed
-    // For example:
-    // DocumentSnapshot userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-    // command = userDoc.get('command');
+    try {
+      DocumentSnapshot userDoc =
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      if (userDoc.exists) {
+        Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+        command = userData['command'] as String?;
+      }
+    } catch (e) {
+      print('Error fetching user data: $e');
+    }
+    notifyListeners();
+  }
+
+  void clearUserData() {
+    userId = null;
+    command = null;
     notifyListeners();
   }
 
@@ -53,12 +66,78 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // You might want to add more methods here as your app grows, such as:
-  // - updateUserCommand(String newCommand)
-  // - createComment(String postId, String content)
-  // - sendMessage(String recipientId, String content)
-  // - getUserProfile()
-  // - updateUserProfile(Map<String, dynamic> data)
+  Future<void> updateUserCommand(String newCommand) async {
+    if (userId == null) return;
+
+    await FirebaseFirestore.instance.collection('users').doc(userId).update({
+      'command': newCommand,
+    });
+
+    command = newCommand;
+    notifyListeners();
+  }
+
+  Future<void> createComment(String postId, String content) async {
+    if (userId == null) return;
+
+    await FirebaseFirestore.instance.collection('comments').add({
+      'postId': postId,
+      'userId': userId,
+      'content': content,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+
+    notifyListeners();
+  }
+
+  Future<void> deleteAccount() async {
+    if (userId == null) return;
+
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(userId).delete();
+
+      QuerySnapshot posts = await FirebaseFirestore.instance
+          .collection('posts')
+          .where('userId', isEqualTo: userId)
+          .get();
+      for (DocumentSnapshot doc in posts.docs) {
+        await doc.reference.delete();
+      }
+
+      QuerySnapshot comments = await FirebaseFirestore.instance
+          .collection('comments')
+          .where('userId', isEqualTo: userId)
+          .get();
+      for (DocumentSnapshot doc in comments.docs) {
+        await doc.reference.delete();
+      }
+
+      await FirebaseAuth.instance.currentUser?.delete();
+
+      clearUserData();
+    } catch (e) {
+      print('Error deleting account: $e');
+      throw e;
+    }
+  }
+
+  Future<Map<String, dynamic>> getUserProfile() async {
+    if (userId == null) return {};
+
+    DocumentSnapshot userDoc =
+        await FirebaseFirestore.instance.collection('users').doc(userId).get();
+    return userDoc.data() as Map<String, dynamic>;
+  }
+
+  Future<void> updateUserProfile(Map<String, dynamic> data) async {
+    if (userId == null) return;
+
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(userId)
+        .update(data);
+    notifyListeners();
+  }
 }
 
 =================================================================
@@ -67,7 +146,6 @@ File: app/lib/home_screen.dart
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'post_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -76,29 +154,26 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Center(child: Text('Scuttlebutt')),
-          bottom: TabBar(
+      child: Column(
+        children: [
+          TabBar(
             tabs: [
               Tab(text: 'Main Feed'),
               Tab(text: 'New Posts'),
             ],
             indicatorColor: Colors.blue[800],
-            labelColor:
-                Colors.blue[800],
-            unselectedLabelColor:
-                Colors.grey,
+            labelColor: Colors.blue[800],
+            unselectedLabelColor: Colors.grey,
           ),
-        ),
-        body: SafeArea(
-          child: TabBarView(
-            children: [
-              PostFeed(sortBy: 'upvotes'),
-              PostFeed(sortBy: 'timestamp'),
-            ],
+          Expanded(
+            child: TabBarView(
+              children: [
+                PostFeed(sortBy: 'upvotes'),
+                PostFeed(sortBy: 'timestamp'),
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -204,221 +279,6 @@ class PostCard extends StatelessWidget {
 
 =================================================================
 
-File: app/lib/login_page.dart
-
-// import 'package:flutter/material.dart';
-// import 'package:firebase_auth/firebase_auth.dart';
-// import 'package:google_sign_in/google_sign_in.dart';
-// import 'package:provider/provider.dart';
-// import 'package:cloud_firestore/cloud_firestore.dart';
-// import 'package:sign_in_with_apple/sign_in_with_apple.dart';
-// import 'package:crypto/crypto.dart';
-// import 'dart:convert';
-// import 'dart:math';
-// import 'app_state.dart';
-// import 'scuttlebutt_app.dart';
-
-// class LoginPage extends StatelessWidget {
-//   const LoginPage({Key? key}) : super(key: key);
-
-//   String generateNonce([int length = 32]) {
-//     final charset =
-//         '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
-//     final random = Random.secure();
-//     return List.generate(length, (_) => charset[random.nextInt(charset.length)])
-//         .join();
-//   }
-
-//   String sha256ofString(String input) {
-//     final bytes = utf8.encode(input);
-//     final digest = sha256.convert(bytes);
-//     return digest.toString();
-//   }
-
-//   Future<UserCredential> signInWithGoogle() async {
-//     final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
-//     final GoogleSignInAuthentication? googleAuth =
-//         await googleUser?.authentication;
-//     final credential = GoogleAuthProvider.credential(
-//       accessToken: googleAuth?.accessToken,
-//       idToken: googleAuth?.idToken,
-//     );
-//     final UserCredential userCredential =
-//         await FirebaseAuth.instance.signInWithCredential(credential);
-//     final String? email = userCredential.user?.email;
-//     if (email != null) {
-//       await FirebaseFirestore.instance
-//           .collection('users')
-//           .doc(userCredential.user!.uid)
-//           .set({'email': email}, SetOptions(merge: true));
-//     }
-//     return userCredential;
-//   }
-
-//   @override
-//   Widget build(BuildContext context) {
-//     return Scaffold(
-//       body: Center(
-//         child: SingleChildScrollView(
-//           child: Column(
-//             mainAxisAlignment: MainAxisAlignment.center,
-//             children: [
-//               Text(
-//                 'Scuttlebutt',
-//                 style: TextStyle(
-//                   fontSize: 48,
-//                   fontWeight: FontWeight.bold,
-//                   color: Color(0xFF8C1515),
-//                 ),
-//               ),
-//               SizedBox(height: 20),
-//               // Image.asset(
-//               //   'assets/AppIcon-1024.png',
-//               //   width: 100,
-//               //   height: 100,
-//               // ),
-//               SizedBox(height: 50),
-//               Container(
-//                 width: 250,
-//                 child: ElevatedButton(
-//                   style: ElevatedButton.styleFrom(
-//                     foregroundColor: Colors.black,
-//                     backgroundColor: Colors.white,
-//                     padding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-//                     shape: RoundedRectangleBorder(
-//                       borderRadius: BorderRadius.circular(8),
-//                     ),
-//                   ),
-//                   child: Row(
-//                     mainAxisSize: MainAxisSize.min,
-//                     children: [
-//                       Image.asset('assets/google_logo.png', height: 24),
-//                       SizedBox(width: 10),
-//                       Text('Sign in with Google'),
-//                     ],
-//                   ),
-//                   onPressed: () async {
-//                     try {
-//                       final UserCredential userCredential =
-//                           await signInWithGoogle();
-//                       final user = userCredential.user;
-//                       if (user != null) {
-//                         print('User signed in: ${user.uid}');
-//                         await Provider.of<AppState>(context, listen: false)
-//                             .initializeUser(user.uid)
-//                             .catchError((error) {
-//                           print('Error initializing user: $error');
-//                           ScaffoldMessenger.of(context).showSnackBar(
-//                             SnackBar(
-//                                 content: Text(
-//                                     'Error loading user data. Please try again.')),
-//                           );
-//                         });
-//                         print('UserId set in AppState');
-//                         Navigator.of(context).pushReplacement(
-//                           MaterialPageRoute(
-//                               builder: (context) => PlaceTrackerApp()),
-//                         );
-//                       }
-//                     } catch (e) {
-//                       print('Error during sign in: $e');
-//                       ScaffoldMessenger.of(context).showSnackBar(
-//                         SnackBar(
-//                             content: Text('Failed to sign in with Google')),
-//                       );
-//                     }
-//                   },
-//                 ),
-//               ),
-//               SizedBox(height: 20),
-//               Container(
-//                 width: 250,
-//                 height: 50,
-//                 child: ElevatedButton(
-//                   style: ElevatedButton.styleFrom(
-//                     foregroundColor: Colors.white,
-//                     backgroundColor: Colors.black,
-//                     shape: RoundedRectangleBorder(
-//                       borderRadius: BorderRadius.circular(8),
-//                     ),
-//                   ),
-//                   child: Row(
-//                     mainAxisAlignment: MainAxisAlignment.center,
-//                     children: [
-//                       Icon(Icons.apple, size: 24),
-//                       SizedBox(width: 10),
-//                       Text(
-//                         'Sign in with Apple',
-//                         style: TextStyle(
-//                           fontSize: Theme.of(context)
-//                                   .textTheme
-//                                   .labelLarge!
-//                                   .fontSize! * 1.05,
-//                         ),
-//                       ),
-//                     ],
-//                   ),
-//                   onPressed: () async {
-//                     final rawNonce = generateNonce();
-//                     final nonce = sha256ofString(rawNonce);
-
-//                     try {
-//                       final appleCredential =
-//                           await SignInWithApple.getAppleIDCredential(
-//                         scopes: [
-//                           AppleIDAuthorizationScopes.email,
-//                           AppleIDAuthorizationScopes.fullName,
-//                         ],
-//                         nonce: nonce,
-//                       );
-
-//                       final oauthCredential =
-//                           OAuthProvider("apple.com").credential(
-//                         idToken: appleCredential.identityToken,
-//                         rawNonce: rawNonce,
-//                       );
-
-//                       final userCredential = await FirebaseAuth.instance
-//                           .signInWithCredential(oauthCredential);
-//                       final user = userCredential.user;
-
-//                       if (user != null) {
-//                         print('User signed in with Apple: ${user.uid}');
-//                         await Provider.of<AppState>(context, listen: false)
-//                             .handleAppleSignIn(userCredential)
-//                             .catchError((error) {
-//                           print('Error initializing user: $error');
-//                           ScaffoldMessenger.of(context).showSnackBar(
-//                             SnackBar(
-//                                 content: Text(
-//                                     'Error loading user data. Please try again.')),
-//                           );
-//                         });
-//                         print('UserId set in AppState');
-//                         Navigator.of(context).pushReplacement(
-//                           MaterialPageRoute(
-//                               builder: (context) => PlaceTrackerApp()),
-//                         );
-//                       }
-//                     } catch (e) {
-//                       print('Error during Apple sign in: $e');
-//                       ScaffoldMessenger.of(context).showSnackBar(
-//                         SnackBar(content: Text('Failed to sign in with Apple')),
-//                       );
-//                     }
-//                   },
-//                 ),
-//               ),
-//             ],
-//           ),
-//         ),
-//       ),
-//     );
-//   }
-// }
-
-=================================================================
-
 File: app/lib/login_screen.dart
 
 import 'package:flutter/material.dart';
@@ -434,8 +294,7 @@ class LoginScreen extends StatelessWidget {
 
   Future<UserCredential> signInWithGoogle() async {
     final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
-    final GoogleSignInAuthentication? googleAuth =
-        await googleUser?.authentication;
+    final GoogleSignInAuthentication? googleAuth = await googleUser?.authentication;
     final credential = GoogleAuthProvider.credential(
       accessToken: googleAuth?.accessToken,
       idToken: googleAuth?.idToken,
@@ -455,7 +314,7 @@ class LoginScreen extends StatelessWidget {
               style: TextStyle(
                 fontSize: 48,
                 fontWeight: FontWeight.bold,
-                color: Color(0xFF8C1515),
+                color: Colors.blue[800],
               ),
             ),
             SizedBox(height: 50),
@@ -465,7 +324,7 @@ class LoginScreen extends StatelessWidget {
                 backgroundColor: Colors.white,
                 padding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
               ),
-              child: Text('Sign in with Google'),
+child: Text('Sign in with Google'),
               onPressed: () async {
                 try {
                   final UserCredential userCredential =
@@ -573,13 +432,8 @@ class MessagesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Messages'),
-      ),
-      body: Center(
-        child: Text('Messages screen - To be implemented'),
-      ),
+    return Center(
+      child: Text('Messages screen - To be implemented'),
     );
   }
 }
@@ -660,13 +514,8 @@ class ProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Profile'),
-      ),
-      body: Center(
-        child: Text('Profile screen - To be implemented'),
-      ),
+    return Center(
+      child: Text('Profile screen - To be implemented'),
     );
   }
 }
@@ -679,7 +528,7 @@ import 'package:flutter/material.dart';
 import 'home_screen.dart';
 import 'messages_screen.dart';
 import 'profile_screen.dart';
-import 'post_screen.dart';
+import 'settings_screen.dart';
 
 class ScuttlebuttApp extends StatelessWidget {
   const ScuttlebuttApp({Key? key}) : super(key: key);
@@ -688,8 +537,20 @@ class ScuttlebuttApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       theme: ThemeData(
-        primarySwatch: Colors.blue,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
+        useMaterial3: true,
+        colorSchemeSeed: const Color(0xFF8C1515),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF8C1515),
+          foregroundColor: Colors.white,
+        ),
+        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+          selectedItemColor: Color(0xFF8C1515),
+          unselectedItemColor: Colors.grey,
+        ),
+        floatingActionButtonTheme: const FloatingActionButtonThemeData(
+          backgroundColor: Color(0xFF8C1515),
+          foregroundColor: Colors.white,
+        ),
       ),
       home: ScuttlebuttHomePage(),
     );
@@ -706,11 +567,13 @@ class ScuttlebuttHomePage extends StatefulWidget {
 class _ScuttlebuttHomePageState extends State<ScuttlebuttHomePage> {
   int _selectedIndex = 0;
 
-  static const List<Widget> _widgetOptions = <Widget>[
-    HomeScreen(),
-    MessagesScreen(),
-    ProfileScreen(),
+  final List<Widget> _widgetOptions = <Widget>[
+    const HomeScreen(),
+    const MessagesScreen(),
+    const ProfileScreen(),
   ];
+
+  final List<String> _titles = ['Home', 'Messages', 'Profile'];
 
   void _onItemTapped(int index) {
     setState(() {
@@ -718,29 +581,39 @@ class _ScuttlebuttHomePageState extends State<ScuttlebuttHomePage> {
     });
   }
 
+  void _openSettings() {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        pageBuilder: (BuildContext context, _, __) {
+          return const SettingsScreen();
+        },
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          const begin = Offset(1.0, 0.0);
+          const end = Offset.zero;
+          const curve = Curves.easeInOut;
+          var tween =
+              Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+          var offsetAnimation = animation.drive(tween);
+          return SlideTransition(position: offsetAnimation, child: child);
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
-        children: [
-          _widgetOptions.elementAt(_selectedIndex),
-          if (_selectedIndex == 0)
-            Positioned(
-              right: 16,
-              bottom: 16,
-              child: FloatingActionButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => PostScreen()),
-                  );
-                },
-                child: Icon(Icons.add, color: Colors.white), // Changed to white
-                backgroundColor: Colors.blue[800],
-              ),
-            ),
+      appBar: AppBar(
+        title: Text(_titles[_selectedIndex]),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.menu),
+            onPressed: _openSettings,
+          ),
         ],
       ),
+      body: _widgetOptions.elementAt(_selectedIndex),
       bottomNavigationBar: BottomNavigationBar(
         items: const <BottomNavigationBarItem>[
           BottomNavigationBarItem(
@@ -757,16 +630,109 @@ class _ScuttlebuttHomePageState extends State<ScuttlebuttHomePage> {
           ),
         ],
         currentIndex: _selectedIndex,
-        selectedItemColor: Colors.blue[800], // Darker shade of blue
-        unselectedItemColor:
-            Colors.grey, // Slightly lighter shade for unselected items
+        selectedItemColor:
+            Colors.blue[800],
         onTap: _onItemTapped,
+        showUnselectedLabels: true,
       ),
     );
   }
 }
 
+=================================================================
 
+File: app/lib/settings_screen.dart
+
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
+import 'app_state.dart';
+import 'login_screen.dart';
+
+class SettingsScreen extends StatelessWidget {
+  const SettingsScreen({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'Settings',
+          style: TextStyle(color: Colors.white), // Set text color to white
+        ),
+        backgroundColor: Colors.blue[800],
+      ),
+      body: ListView(
+        children: [
+          ListTile(
+            leading: const Icon(Icons.exit_to_app),
+            title: const Text('Log Out'),
+            onTap: () async {
+              await FirebaseAuth.instance.signOut();
+              Provider.of<AppState>(context, listen: false).clearUserData();
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (context) => LoginScreen()),
+                (Route<dynamic> route) => false,
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.delete_forever, color: Colors.red),
+            title: const Text(
+              'Delete Account',
+              style: TextStyle(color: Colors.red),
+            ),
+            onTap: () {
+              _showDeleteAccountConfirmation(context);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeleteAccountConfirmation(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Delete Account'),
+          content: Text(
+              'Are you sure you want to delete your account? This action cannot be undone.'),
+          actions: <Widget>[
+            TextButton(
+              child: Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: Text('Delete', style: TextStyle(color: Colors.red)),
+              onPressed: () async {
+                Navigator.of(context).pop();
+                try {
+                  await Provider.of<AppState>(context, listen: false)
+                      .deleteAccount();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Account deleted successfully')),
+                  );
+                  Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute(builder: (context) => LoginScreen()),
+                    (Route<dynamic> route) => false,
+                  );
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to delete account: $e')),
+                  );
+                }
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
 
 =================================================================
 

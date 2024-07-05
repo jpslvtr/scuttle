@@ -31,7 +31,7 @@ class LoginScreen extends StatelessWidget {
               style: TextStyle(
                 fontSize: 48,
                 fontWeight: FontWeight.bold,
-                color: Color(0xFF8C1515),
+                color: Colors.blue[800],
               ),
             ),
             SizedBox(height: 50),
@@ -41,7 +41,17 @@ class LoginScreen extends StatelessWidget {
                 backgroundColor: Colors.white,
                 padding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
               ),
-child: Text('Sign in with Google'),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Image.asset(
+                    'assets/google_logo.png',
+                    height: 24.0,
+                  ),
+                  SizedBox(width: 10),
+                  Text('Sign in with Google'),
+                ],
+              ),
               onPressed: () async {
                 try {
                   final UserCredential userCredential =

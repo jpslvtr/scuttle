@@ -104,6 +104,8 @@ class _ScuttlebuttHomePageState extends State<ScuttlebuttHomePage> {
           ),
         ],
         currentIndex: _selectedIndex,
+        selectedItemColor:
+            Colors.blue[800],
         onTap: _onItemTapped,
         showUnselectedLabels: true,
       ),
