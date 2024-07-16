@@ -21,7 +21,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -41,6 +41,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           tabs: [
             Tab(text: 'Posts'),
             Tab(text: 'Comments'),
+            Tab(text: 'Saved'),
           ],
           indicatorColor: Colors.blue[800],
           labelColor: Colors.blue[800],
@@ -52,6 +53,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             children: [
               _buildPostsList(appState),
               _buildCommentsList(appState),
+              _buildSavedPostsList(appState),
             ],
           ),
         ),
@@ -79,18 +81,17 @@ class _ProfileScreenState extends State<ProfileScreen>
               Container(
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.blue[100], // Light blue background
+                  color: Colors.blue[100],
                   border: Border.all(
                     color: Colors.blue[800]!,
                     width: 2,
                   ),
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.all(4.0), // Reduced padding
+                  padding: const EdgeInsets.all(4.0),
                   child: Text(
                     userData['profileEmoji'] ?? '🙂',
-                    style:
-                        TextStyle(fontSize: 40), // Slightly reduced font size
+                    style: TextStyle(fontSize: 40),
                   ),
                 ),
               ),
@@ -339,6 +340,33 @@ class _ProfileScreenState extends State<ProfileScreen>
                 },
               ),
               trailing: Text('${comment['points']} points'),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildSavedPostsList(AppState appState) {
+    return FutureBuilder<List<DocumentSnapshot>>(
+      future: appState.getSavedPosts(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          print('Error in _buildSavedPostsList: ${snapshot.error}');
+          return Center(child: Text('Error loading saved posts: ${snapshot.error}'));
+        }
+        final savedPosts = snapshot.data ?? [];
+        return ListView.builder(
+          itemCount: savedPosts.length,
+          itemBuilder: (context, index) {
+            final post = savedPosts[index].data() as Map<String, dynamic>;
+            return ListTile(
+              title: Text(post['title'] ?? ''),
+              subtitle: Text(post['content'] ?? ''),
+              trailing: Text('${post['points']} points'),
             );
           },
         );

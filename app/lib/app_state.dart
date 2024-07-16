@@ -8,6 +8,7 @@ class AppState extends ChangeNotifier {
   String? userId;
   String? command;
   String? userName;
+  Set<String> savedPosts = {};
 
   AppState({this.userId, this.command, this.userName});
 
@@ -20,6 +21,7 @@ class AppState extends ChangeNotifier {
         Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
         command = userData['command'] as String?;
         userName = userData['userName'] as String?;
+        savedPosts = Set<String>.from(userData['savedPosts'] ?? []);
       }
     } catch (e) {
       print('Error fetching user data: $e');
@@ -35,6 +37,7 @@ class AppState extends ChangeNotifier {
           'userName': userName,
           'createdAt': FieldValue.serverTimestamp(),
           'profileEmoji': '🙂', // Default emoji
+          'savedPosts': [],
         }, SetOptions(merge: true));
         this.userName = userName;
         this.userId = user.uid;
@@ -52,6 +55,7 @@ class AppState extends ChangeNotifier {
     userId = null;
     command = null;
     userName = null;
+    savedPosts.clear();
     notifyListeners();
   }
 
@@ -187,7 +191,6 @@ class AppState extends ChangeNotifier {
     }
   }
 
-
   Future<void> deletePost(String postId) async {
     if (userId == null) return;
 
@@ -238,6 +241,48 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       print('Error updating profile emoji: $e');
+    }
+  }
+
+  Future<void> toggleSavedPost(String postId) async {
+    if (userId == null) return;
+
+    try {
+      if (savedPosts.contains(postId)) {
+        savedPosts.remove(postId);
+      } else {
+        savedPosts.add(postId);
+      }
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .update({'savedPosts': savedPosts.toList()});
+
+      notifyListeners();
+    } catch (e) {
+      print('Error toggling saved post: $e');
+    }
+  }
+
+  Future<List<DocumentSnapshot>> getSavedPosts() async {
+    if (userId == null) return [];
+
+    try {
+      List<DocumentSnapshot> savedPostDocs = [];
+      for (String postId in savedPosts) {
+        DocumentSnapshot postDoc = await FirebaseFirestore.instance
+            .collection('posts')
+            .doc(postId)
+            .get();
+        if (postDoc.exists) {
+          savedPostDocs.add(postDoc);
+        }
+      }
+      return savedPostDocs;
+    } catch (e) {
+      print('Error fetching saved posts: $e');
+      return [];
     }
   }
 }

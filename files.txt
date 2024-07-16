@@ -29,6 +29,27 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<bool> createUserWithUserName(User user, String userName) async {
+    if (await isUserNameAvailable(userName)) {
+      try {
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+          'email': user.email,
+          'userName': userName,
+          'createdAt': FieldValue.serverTimestamp(),
+          'profileEmoji': '🙂', // Default emoji
+        }, SetOptions(merge: true));
+        this.userName = userName;
+        this.userId = user.uid;
+        notifyListeners();
+        return true;
+      } catch (e) {
+        print('Error creating user with username: $e');
+        return false;
+      }
+    }
+    return false;
+  }
+
   void clearUserData() {
     userId = null;
     command = null;
@@ -47,26 +68,6 @@ class AppState extends ChangeNotifier {
       print('Error checking username availability: $e');
       return false;
     }
-  }
-
-  Future<bool> createUserWithUserName(User user, String userName) async {
-    if (await isUserNameAvailable(userName)) {
-      try {
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-          'email': user.email,
-          'userName': userName,
-          'createdAt': FieldValue.serverTimestamp(),
-          'profileEmoji': '🙂', // Default emoji
-        }, SetOptions(merge: true));
-        this.userName = userName;
-        notifyListeners();
-        return true;
-      } catch (e) {
-        print('Error creating user with username: $e');
-        return false;
-      }
-    }
-    return false;
   }
 
   Future<void> createPost(String title, String content, String feed) async {
@@ -177,12 +178,17 @@ class AppState extends ChangeNotifier {
   Future<void> updateUserProfile(Map<String, dynamic> data) async {
     if (userId == null) return;
 
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(userId)
-        .update(data);
-    notifyListeners();
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .update(data);
+      notifyListeners();
+    } catch (e) {
+      print('Error updating user profile: $e');
+    }
   }
+
 
   Future<void> deletePost(String postId) async {
     if (userId == null) return;
@@ -491,6 +497,8 @@ String getRelativeTime(DateTime dateTime) {
 
 File: app/lib/login_screen.dart
 
+// File: app/lib/login_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -499,12 +507,22 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'app_state.dart';
 import 'scuttlebutt_app.dart';
 
-class LoginScreen extends StatelessWidget {
+class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
+
+  @override
+  _LoginScreenState createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final TextEditingController _userNameController = TextEditingController();
+  bool _isCreatingAccount = false;
+  String? _userNameError;
 
   Future<UserCredential> signInWithGoogle() async {
     final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
-    final GoogleSignInAuthentication? googleAuth = await googleUser?.authentication;
+    final GoogleSignInAuthentication? googleAuth =
+        await googleUser?.authentication;
     final credential = GoogleAuthProvider.credential(
       accessToken: googleAuth?.accessToken,
       idToken: googleAuth?.idToken,
@@ -512,70 +530,150 @@ class LoginScreen extends StatelessWidget {
     return await FirebaseAuth.instance.signInWithCredential(credential);
   }
 
+  bool _isValidUserName(String userName) {
+    final RegExp validCharacters = RegExp(r'^[a-zA-Z0-9._]+$');
+    return validCharacters.hasMatch(userName);
+  }
+
+  void _handleSignIn() async {
+    try {
+      final UserCredential userCredential = await signInWithGoogle();
+      final user = userCredential.user;
+      if (user != null) {
+        final appState = Provider.of<AppState>(context, listen: false);
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
+
+        if (userDoc.exists && userDoc.data()?['userName'] != null) {
+          // Existing user with username, proceed to home page
+          await appState.initializeUser(user.uid);
+          _navigateToHome();
+        } else {
+          // New user or existing user without username, show username input
+          setState(() {
+            _isCreatingAccount = true;
+          });
+        }
+      }
+    } catch (e) {
+      print('Error during sign in: $e');
+      _showErrorDialog('Failed to sign in with Google');
+    }
+  }
+
+  void _handleCreateAccount() async {
+    final userName = _userNameController.text.trim();
+    if (!_isValidUserName(userName)) {
+      setState(() {
+        _userNameError =
+            'Letters, numbers, periods, and underscores.';
+      });
+      return;
+    }
+
+    final appState = Provider.of<AppState>(context, listen: false);
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final success = await appState.createUserWithUserName(user, userName);
+      if (success) {
+        _navigateToHome();
+      } else {
+        setState(() {
+          _userNameError = 'Username is already taken. Please choose another.';
+        });
+      }
+    }
+  }
+
+  void _navigateToHome() {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (context) => ScuttlebuttHomePage()),
+    );
+  }
+
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Error'),
+          content: Text(message),
+          actions: <Widget>[
+            TextButton(
+              child: Text('OK'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              'Scuttlebutt',
-              style: TextStyle(
-                fontSize: 48,
-                fontWeight: FontWeight.bold,
-                color: Colors.blue[800],
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'Scuttlebutt',
+                style: TextStyle(
+                  fontSize: 48,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue[800],
+                ),
               ),
-            ),
-            SizedBox(height: 50),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                foregroundColor: Colors.black,
-                backgroundColor: Colors.white,
-                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Image.asset(
-                    'assets/google_logo.png',
-                    height: 24.0,
+              SizedBox(height: 50),
+              if (!_isCreatingAccount) ...[
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    foregroundColor: Colors.black,
+                    backgroundColor: Colors.white,
+                    padding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
                   ),
-                  SizedBox(width: 10),
-                  Text('Sign in with Google'),
-                ],
-              ),
-              onPressed: () async {
-                try {
-                  final UserCredential userCredential =
-                      await signInWithGoogle();
-                  final user = userCredential.user;
-                  if (user != null) {
-                    await FirebaseFirestore.instance
-                        .collection('users')
-                        .doc(user.uid)
-                        .set({
-                      'email': user.email,
-                      'displayName': user.displayName,
-                      'createdAt': FieldValue.serverTimestamp(),
-                    }, SetOptions(merge: true));
-
-                    await Provider.of<AppState>(context, listen: false)
-                        .initializeUser(user.uid);
-                    Navigator.of(context).pushReplacement(
-                      MaterialPageRoute(
-                          builder: (context) => ScuttlebuttHomePage()),
-                    );
-                  }
-                } catch (e) {
-                  print('Error during sign in: $e');
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to sign in with Google')),
-                  );
-                }
-              },
-            ),
-          ],
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Image.asset(
+                        'assets/google_logo.png',
+                        height: 24.0,
+                      ),
+                      SizedBox(width: 10),
+                      Text('Sign in with Google'),
+                    ],
+                  ),
+                  onPressed: _handleSignIn,
+                ),
+              ] else ...[
+                TextField(
+                  controller: _userNameController,
+                  decoration: InputDecoration(
+                    labelText: 'Choose a username',
+                    errorText: _userNameError,
+                  ),
+                  onChanged: (value) {
+                    if (_userNameError != null) {
+                      setState(() {
+                        _userNameError = null;
+                      });
+                    }
+                  },
+                ),
+                SizedBox(height: 20),
+                ElevatedButton(
+                  child: Text('Create Account'),
+                  onPressed: _handleCreateAccount,
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );
@@ -1087,31 +1185,29 @@ class _ProfileScreenState extends State<ProfileScreen>
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
-    return Scaffold(
-      body: Column(
-        children: [
-          _buildProfileHeader(appState),
-          TabBar(
+    return Column(
+      children: [
+        _buildProfileHeader(appState),
+        TabBar(
+          controller: _tabController,
+          tabs: [
+            Tab(text: 'Posts'),
+            Tab(text: 'Comments'),
+          ],
+          indicatorColor: Colors.blue[800],
+          labelColor: Colors.blue[800],
+          unselectedLabelColor: Colors.grey,
+        ),
+        Expanded(
+          child: TabBarView(
             controller: _tabController,
-            tabs: [
-              Tab(text: 'Posts'),
-              Tab(text: 'Comments'),
+            children: [
+              _buildPostsList(appState),
+              _buildCommentsList(appState),
             ],
-            indicatorColor: Colors.blue[800],
-            labelColor: Colors.blue[800],
-            unselectedLabelColor: Colors.grey,
           ),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildPostsList(appState),
-                _buildCommentsList(appState),
-              ],
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -1129,29 +1225,68 @@ class _ProfileScreenState extends State<ProfileScreen>
         final userData = snapshot.data ?? {};
         return Padding(
           padding: const EdgeInsets.all(16.0),
-          child: Column(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              GestureDetector(
-                onTap: () => _showEmojiPicker(context, appState),
-                child: Text(
-                  userData['profileEmoji'] ?? '😊',
-                  style: TextStyle(fontSize: 60),
+              Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.blue[100], // Light blue background
+                  border: Border.all(
+                    color: Colors.blue[800]!,
+                    width: 2,
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(4.0), // Reduced padding
+                  child: Text(
+                    userData['profileEmoji'] ?? '🙂',
+                    style:
+                        TextStyle(fontSize: 40), // Slightly reduced font size
+                  ),
                 ),
               ),
-              SizedBox(height: 16),
+              SizedBox(width: 16),
               Text(
                 userData['userName'] ?? 'Anonymous User',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
-              SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => SettingsScreen()),
-                  );
+              SizedBox(width: 16),
+              IconButton(
+                icon: Icon(Icons.edit, color: Colors.blue[800]),
+                onPressed: () => _showEditOptions(context, appState, userData),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showEditOptions(
+      BuildContext context, AppState appState, Map<String, dynamic> userData) {
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              ListTile(
+                leading: Icon(Icons.emoji_emotions),
+                title: Text('Change Emoji'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showEmojiPicker(context, appState);
                 },
-                child: Text('Settings'),
+              ),
+              ListTile(
+                leading: Icon(Icons.edit),
+                title: Text('Edit Username'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showUsernameEditor(context, appState, userData['userName']);
+                },
               ),
             ],
           ),
@@ -1170,15 +1305,25 @@ class _ProfileScreenState extends State<ProfileScreen>
             spacing: 10,
             children: [
               '🙂',
-              '😎',
-              '🤓',
+              '🙃',
+              '😐',
+              '😬',
+              '🥲',
+              '🤔',
+              '🤷',
+              '🤷‍♀️',
+              '🫡',
+              '😳',
+              '🫣',
+              '🙄',
               '🧐',
-              '🤠',
-              '👨‍💻',
-              '👩‍💻',
-              '🦸‍♂️',
-              '🦸‍♀️',
-              '🥷'
+              '😴',
+              '🫥',
+              '🫨',
+              '💀',
+              '🤡',
+              '🥸',
+              '👾'
             ]
                 .map((emoji) => GestureDetector(
                       onTap: () {
@@ -1192,6 +1337,84 @@ class _ProfileScreenState extends State<ProfileScreen>
         );
       },
     );
+  }
+
+  void _showUsernameEditor(
+      BuildContext context, AppState appState, String? currentUsername) {
+    final TextEditingController controller =
+        TextEditingController(text: currentUsername);
+    String? errorText;
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setState) {
+            return AlertDialog(
+              title: Text('Edit Username'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: controller,
+                    decoration: InputDecoration(
+                      labelText: 'Username',
+                      errorText: errorText,
+                    ),
+                    onChanged: (value) {
+                      setState(() {
+                        errorText = null;
+                      });
+                    },
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    'Letters, numbers, periods, and underscores.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  child: Text('Cancel'),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                ),
+                TextButton(
+                  child: Text('Save'),
+                  onPressed: () async {
+                    final newUsername = controller.text.trim();
+                    if (_isValidUserName(newUsername)) {
+                      final isAvailable =
+                          await appState.isUserNameAvailable(newUsername);
+                      if (isAvailable || newUsername == currentUsername) {
+                        await appState
+                            .updateUserProfile({'userName': newUsername});
+                        Navigator.of(context).pop();
+                      } else {
+                        setState(() {
+                          errorText = 'Username is already taken';
+                        });
+                      }
+                    } else {
+                      setState(() {
+                        errorText = 'Invalid username format';
+                      });
+                    }
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  bool _isValidUserName(String userName) {
+    final RegExp validCharacters = RegExp(r'^[a-zA-Z0-9._]+$');
+    return validCharacters.hasMatch(userName);
   }
 
   Widget _buildPostsList(AppState appState) {
@@ -1534,6 +1757,18 @@ class _ScuttlebuttHomePageState extends State<ScuttlebuttHomePage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(_appBarTitle),
+        actions: [
+          if (_selectedIndex == 2) // Show settings icon only on Profile screen
+            IconButton(
+              icon: Icon(Icons.settings),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => SettingsScreen()),
+                );
+              },
+            ),
+        ],
       ),
       drawer: _selectedIndex == 0
           ? Drawer(

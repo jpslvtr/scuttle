@@ -110,8 +110,9 @@ class PostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final appState = Provider.of<AppState>(context, listen: false);
+    final appState = Provider.of<AppState>(context);
     final isCreator = appState.userId == userId;
+    final isSaved = appState.savedPosts.contains(postId);
 
     return Card(
       margin: EdgeInsets.all(8.0),
@@ -156,39 +157,39 @@ class PostCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text('$points'),
                       IconButton(
                         icon: Icon(Icons.arrow_upward),
                         onPressed: () {
                           appState.updatePostPoints(postId, 1);
                         },
                       ),
+                      Text('$points'),
                       IconButton(
                         icon: Icon(Icons.arrow_downward),
                         onPressed: () {
                           appState.updatePostPoints(postId, -1);
                         },
                       ),
+                      SizedBox(width: 16),
+                      Icon(Icons.comment),
+                      SizedBox(width: 4),
+                      Text('$commentCount'),
                     ],
                   ),
                   Row(
                     children: [
                       IconButton(
-                        icon: Icon(Icons.comment),
+                        icon: Icon(
+                          isSaved ? Icons.bookmark : Icons.bookmark_border,
+                          color: isSaved ? Colors.blue[800] : null,
+                        ),
                         onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  PostDetailScreen(postId: postId),
-                            ),
-                          );
+                          appState.toggleSavedPost(postId);
                         },
                       ),
-                      Text('$commentCount'),
+                      Text(getRelativeTime(timestamp)),
                     ],
                   ),
-                  Text(getRelativeTime(timestamp)),
                 ],
               ),
             ],
