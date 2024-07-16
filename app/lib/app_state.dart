@@ -22,33 +22,28 @@ class AppState extends ChangeNotifier {
         command = userData['command'] as String?;
         userName = userData['userName'] as String?;
         savedPosts = Set<String>.from(userData['savedPosts'] ?? []);
+      } else {
+        // Create a new user document if it doesn't exist
+        await createUserDocument(uid);
       }
     } catch (e) {
-      print('Error fetching user data: $e');
+      print('Error fetching or creating user data: $e');
     }
     notifyListeners();
   }
 
-  Future<bool> createUserWithUserName(User user, String userName) async {
-    if (await isUserNameAvailable(userName)) {
-      try {
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-          'email': user.email,
-          'userName': userName,
-          'createdAt': FieldValue.serverTimestamp(),
-          'profileEmoji': '🙂', // Default emoji
-          'savedPosts': [],
-        }, SetOptions(merge: true));
-        this.userName = userName;
-        this.userId = user.uid;
-        notifyListeners();
-        return true;
-      } catch (e) {
-        print('Error creating user with username: $e');
-        return false;
-      }
+  Future<void> createUserDocument(String uid) async {
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({
+        'email': FirebaseAuth.instance.currentUser?.email,
+        'createdAt': FieldValue.serverTimestamp(),
+        'profileEmoji': '🙂', // Default emoji
+        'savedPosts': [],
+        'userName': '', // Set default username to empty string
+      }, SetOptions(merge: true));
+    } catch (e) {
+      print('Error creating user document: $e');
     }
-    return false;
   }
 
   void clearUserData() {
@@ -60,6 +55,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<bool> isUserNameAvailable(String userName) async {
+    if (userName.isEmpty) return true; // Allow empty usernames
     try {
       QuerySnapshot query = await FirebaseFirestore.instance
           .collection('users')
@@ -181,10 +177,29 @@ class AppState extends ChangeNotifier {
     if (userId == null) return;
 
     try {
+      if (data.containsKey('userName')) {
+        String newUserName = data['userName'] as String;
+        if (newUserName.toLowerCase() == 'anonymous') {
+          print('Error: Username "anonymous" is not allowed');
+          return;
+        }
+        if (newUserName.length > 15) {
+          print('Error: Username must be 15 characters or less');
+          return;
+        }
+        if (!(await isUserNameAvailable(newUserName))) {
+          print('Error: Username is not available');
+          return;
+        }
+      }
+
       await FirebaseFirestore.instance
           .collection('users')
           .doc(userId)
           .update(data);
+      if (data.containsKey('userName')) {
+        userName = data['userName'];
+      }
       notifyListeners();
     } catch (e) {
       print('Error updating user profile: $e');

@@ -3,9 +3,8 @@ My app Scuttlebutt is going to be an anonymous feed-based platform for service m
 When giving me code, please give me the full code for the file that the code lives in. Not just the code that needs editing; even the unchanged parts. I shouldn't see things like "implement functionality here..." or "methods remain the same..." Ensure that the code changes don’t break any existing functionality. If rules need to be updated, give me the complete revised set of rules.
 
 Here's what I'd like help with
-- Upvote count in between the up and down arows
-- Comment icon and num closer upvote stuff
-- Another: bookmark option that'll save the post. Need to implement this functionality - ability to save posts.
-- In the profile screen, besides Posts and Comments, another tab for "Saved". This is where the saved posts will go. The order will be in the order in which the post was saved
+- Username's should be displayed @username
+- Let usernames be empty strings. If it is an empty string, it should be @anonymous
+- Don't let people actually set their username to the string "anonymous"
 
 Please ensure that any errors are printed to the terminal.

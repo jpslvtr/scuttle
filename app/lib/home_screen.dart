@@ -50,7 +50,7 @@ class PostFeed extends StatelessWidget {
       stream: FirebaseFirestore.instance
           .collection('posts')
           .where('feed', isEqualTo: currentFeed)
-          .orderBy(sortBy, descending: true)
+          .orderBy('timestamp', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
@@ -148,6 +148,34 @@ class PostCard extends StatelessWidget {
                       onPressed: () => _showDeleteConfirmation(context),
                     ),
                 ],
+                ),
+              SizedBox(height: 8.0),
+              FutureBuilder<DocumentSnapshot>(
+                future: FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(userId)
+                    .get(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return Text('Loading...');
+                  }
+                  if (snapshot.hasError) {
+                    print('Error loading user data: ${snapshot.error}');
+                    return Text('@anonymous');
+                  }
+                  final userData =
+                      snapshot.data?.data() as Map<String, dynamic>?;
+                  final userName = userData?['userName'] as String?;
+                  return Text(
+                    userName == null || userName.isEmpty
+                        ? '@anonymous'
+                        : '@$userName',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                  );
+                },
               ),
               SizedBox(height: 8.0),
               Text(content),

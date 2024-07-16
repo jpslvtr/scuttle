@@ -73,6 +73,9 @@ class _ProfileScreenState extends State<ProfileScreen>
           return Text('Error loading profile: ${snapshot.error}');
         }
         final userData = snapshot.data ?? {};
+        final displayName = userData['userName'] == null || userData['userName'].isEmpty
+            ? '@anonymous'
+            : '@${userData['userName']}';
         return Padding(
           padding: const EdgeInsets.all(16.0),
           child: Row(
@@ -97,12 +100,15 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
               SizedBox(width: 16),
               Text(
-                userData['userName'] ?? 'Anonymous User',
+                displayName,
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
               SizedBox(width: 16),
-              IconButton(
-                icon: Icon(Icons.edit, color: Colors.blue[800]),
+             IconButton(
+                icon: Icon(
+                  Icons.edit,
+                  size: 20.0, 
+                ),
                 onPressed: () => _showEditOptions(context, appState, userData),
               ),
             ],
@@ -131,7 +137,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
               ListTile(
                 leading: Icon(Icons.edit),
-                title: Text('Edit Username'),
+                title: Text('Set/edit username'),
                 onTap: () {
                   Navigator.pop(context);
                   _showUsernameEditor(context, appState, userData['userName']);
@@ -215,10 +221,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                         errorText = null;
                       });
                     },
+                    maxLength:
+                        15,
                   ),
                   SizedBox(height: 16),
                   Text(
-                    'Letters, numbers, periods, and underscores.',
+                    'Letters, numbers, periods, and underscores. Leave empty for anonymous.',
                     style: TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                 ],
@@ -234,7 +242,16 @@ class _ProfileScreenState extends State<ProfileScreen>
                   child: Text('Save'),
                   onPressed: () async {
                     final newUsername = controller.text.trim();
-                    if (_isValidUserName(newUsername)) {
+                    if (newUsername.toLowerCase() == 'anonymous') {
+                      setState(() {
+                        errorText = 'Username "anonymous" is not allowed';
+                      });
+                    } else if (newUsername.length > 15) {
+                      setState(() {
+                        errorText = 'Username must be 15 characters or less';
+                      });
+                    } else if (_isValidUserName(newUsername) ||
+                        newUsername.isEmpty) {
                       final isAvailable =
                           await appState.isUserNameAvailable(newUsername);
                       if (isAvailable || newUsername == currentUsername) {
@@ -356,7 +373,8 @@ class _ProfileScreenState extends State<ProfileScreen>
         }
         if (snapshot.hasError) {
           print('Error in _buildSavedPostsList: ${snapshot.error}');
-          return Center(child: Text('Error loading saved posts: ${snapshot.error}'));
+          return Center(
+              child: Text('Error loading saved posts: ${snapshot.error}'));
         }
         final savedPosts = snapshot.data ?? [];
         return ListView.builder(
@@ -438,7 +456,7 @@ class SettingsScreen extends StatelessWidget {
           ),
           _buildSectionHeader('Account'),
           ListTile(
-            leading: Icon(Icons.sync),
+            leading: Icon(Icons.corporate_fare),
             title: Text('Change commands'),
             onTap: () {
               // TODO: Implement change commands functionality

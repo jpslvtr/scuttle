@@ -1,7 +1,5 @@
 File: app/lib/app_state.dart
 
-// File: app/lib/app_state.dart
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -10,6 +8,7 @@ class AppState extends ChangeNotifier {
   String? userId;
   String? command;
   String? userName;
+  Set<String> savedPosts = {};
 
   AppState({this.userId, this.command, this.userName});
 
@@ -22,11 +21,28 @@ class AppState extends ChangeNotifier {
         Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
         command = userData['command'] as String?;
         userName = userData['userName'] as String?;
+        savedPosts = Set<String>.from(userData['savedPosts'] ?? []);
+      } else {
+        // Create a new user document if it doesn't exist
+        await createUserDocument(uid);
       }
     } catch (e) {
-      print('Error fetching user data: $e');
+      print('Error fetching or creating user data: $e');
     }
     notifyListeners();
+  }
+
+  Future<void> createUserDocument(String uid) async {
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({
+        'email': FirebaseAuth.instance.currentUser?.email,
+        'createdAt': FieldValue.serverTimestamp(),
+        'profileEmoji': '🙂', // Default emoji
+        'savedPosts': [],
+      }, SetOptions(merge: true));
+    } catch (e) {
+      print('Error creating user document: $e');
+    }
   }
 
   Future<bool> createUserWithUserName(User user, String userName) async {
@@ -37,6 +53,7 @@ class AppState extends ChangeNotifier {
           'userName': userName,
           'createdAt': FieldValue.serverTimestamp(),
           'profileEmoji': '🙂', // Default emoji
+          'savedPosts': [],
         }, SetOptions(merge: true));
         this.userName = userName;
         this.userId = user.uid;
@@ -54,6 +71,7 @@ class AppState extends ChangeNotifier {
     userId = null;
     command = null;
     userName = null;
+    savedPosts.clear();
     notifyListeners();
   }
 
@@ -183,12 +201,14 @@ class AppState extends ChangeNotifier {
           .collection('users')
           .doc(userId)
           .update(data);
+      if (data.containsKey('userName')) {
+        userName = data['userName'];
+      }
       notifyListeners();
     } catch (e) {
       print('Error updating user profile: $e');
     }
   }
-
 
   Future<void> deletePost(String postId) async {
     if (userId == null) return;
@@ -240,6 +260,48 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       print('Error updating profile emoji: $e');
+    }
+  }
+
+  Future<void> toggleSavedPost(String postId) async {
+    if (userId == null) return;
+
+    try {
+      if (savedPosts.contains(postId)) {
+        savedPosts.remove(postId);
+      } else {
+        savedPosts.add(postId);
+      }
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .update({'savedPosts': savedPosts.toList()});
+
+      notifyListeners();
+    } catch (e) {
+      print('Error toggling saved post: $e');
+    }
+  }
+
+  Future<List<DocumentSnapshot>> getSavedPosts() async {
+    if (userId == null) return [];
+
+    try {
+      List<DocumentSnapshot> savedPostDocs = [];
+      for (String postId in savedPosts) {
+        DocumentSnapshot postDoc = await FirebaseFirestore.instance
+            .collection('posts')
+            .doc(postId)
+            .get();
+        if (postDoc.exists) {
+          savedPostDocs.add(postDoc);
+        }
+      }
+      return savedPostDocs;
+    } catch (e) {
+      print('Error fetching saved posts: $e');
+      return [];
     }
   }
 }
@@ -360,8 +422,9 @@ class PostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final appState = Provider.of<AppState>(context, listen: false);
+    final appState = Provider.of<AppState>(context);
     final isCreator = appState.userId == userId;
+    final isSaved = appState.savedPosts.contains(postId);
 
     return Card(
       margin: EdgeInsets.all(8.0),
@@ -406,39 +469,39 @@ class PostCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text('$points'),
                       IconButton(
                         icon: Icon(Icons.arrow_upward),
                         onPressed: () {
                           appState.updatePostPoints(postId, 1);
                         },
                       ),
+                      Text('$points'),
                       IconButton(
                         icon: Icon(Icons.arrow_downward),
                         onPressed: () {
                           appState.updatePostPoints(postId, -1);
                         },
                       ),
+                      SizedBox(width: 16),
+                      Icon(Icons.comment),
+                      SizedBox(width: 4),
+                      Text('$commentCount'),
                     ],
                   ),
                   Row(
                     children: [
                       IconButton(
-                        icon: Icon(Icons.comment),
+                        icon: Icon(
+                          isSaved ? Icons.bookmark : Icons.bookmark_border,
+                          color: isSaved ? Colors.blue[800] : null,
+                        ),
                         onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  PostDetailScreen(postId: postId),
-                            ),
-                          );
+                          appState.toggleSavedPost(postId);
                         },
                       ),
-                      Text('$commentCount'),
+                      Text(getRelativeTime(timestamp)),
                     ],
                   ),
-                  Text(getRelativeTime(timestamp)),
                 ],
               ),
             ],
@@ -503,7 +566,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'app_state.dart';
 import 'scuttlebutt_app.dart';
 
@@ -515,10 +577,6 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final TextEditingController _userNameController = TextEditingController();
-  bool _isCreatingAccount = false;
-  String? _userNameError;
-
   Future<UserCredential> signInWithGoogle() async {
     final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
     final GoogleSignInAuthentication? googleAuth =
@@ -530,60 +588,18 @@ class _LoginScreenState extends State<LoginScreen> {
     return await FirebaseAuth.instance.signInWithCredential(credential);
   }
 
-  bool _isValidUserName(String userName) {
-    final RegExp validCharacters = RegExp(r'^[a-zA-Z0-9._]+$');
-    return validCharacters.hasMatch(userName);
-  }
-
   void _handleSignIn() async {
     try {
       final UserCredential userCredential = await signInWithGoogle();
       final user = userCredential.user;
       if (user != null) {
         final appState = Provider.of<AppState>(context, listen: false);
-        final userDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .get();
-
-        if (userDoc.exists && userDoc.data()?['userName'] != null) {
-          // Existing user with username, proceed to home page
-          await appState.initializeUser(user.uid);
-          _navigateToHome();
-        } else {
-          // New user or existing user without username, show username input
-          setState(() {
-            _isCreatingAccount = true;
-          });
-        }
+        await appState.initializeUser(user.uid);
+        _navigateToHome();
       }
     } catch (e) {
       print('Error during sign in: $e');
       _showErrorDialog('Failed to sign in with Google');
-    }
-  }
-
-  void _handleCreateAccount() async {
-    final userName = _userNameController.text.trim();
-    if (!_isValidUserName(userName)) {
-      setState(() {
-        _userNameError =
-            'Letters, numbers, periods, and underscores.';
-      });
-      return;
-    }
-
-    final appState = Provider.of<AppState>(context, listen: false);
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      final success = await appState.createUserWithUserName(user, userName);
-      if (success) {
-        _navigateToHome();
-      } else {
-        setState(() {
-          _userNameError = 'Username is already taken. Please choose another.';
-        });
-      }
     }
   }
 
@@ -631,47 +647,25 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
               SizedBox(height: 50),
-              if (!_isCreatingAccount) ...[
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    foregroundColor: Colors.black,
-                    backgroundColor: Colors.white,
-                    padding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Image.asset(
-                        'assets/google_logo.png',
-                        height: 24.0,
-                      ),
-                      SizedBox(width: 10),
-                      Text('Sign in with Google'),
-                    ],
-                  ),
-                  onPressed: _handleSignIn,
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  foregroundColor: Colors.black,
+                  backgroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
                 ),
-              ] else ...[
-                TextField(
-                  controller: _userNameController,
-                  decoration: InputDecoration(
-                    labelText: 'Choose a username',
-                    errorText: _userNameError,
-                  ),
-                  onChanged: (value) {
-                    if (_userNameError != null) {
-                      setState(() {
-                        _userNameError = null;
-                      });
-                    }
-                  },
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Image.asset(
+                      'assets/google_logo.png',
+                      height: 24.0,
+                    ),
+                    SizedBox(width: 10),
+                    Text('Sign in with Google'),
+                  ],
                 ),
-                SizedBox(height: 20),
-                ElevatedButton(
-                  child: Text('Create Account'),
-                  onPressed: _handleCreateAccount,
-                ),
-              ],
+                onPressed: _handleSignIn,
+              ),
             ],
           ),
         ),
@@ -1173,7 +1167,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -1193,6 +1187,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           tabs: [
             Tab(text: 'Posts'),
             Tab(text: 'Comments'),
+            Tab(text: 'Saved'),
           ],
           indicatorColor: Colors.blue[800],
           labelColor: Colors.blue[800],
@@ -1204,6 +1199,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             children: [
               _buildPostsList(appState),
               _buildCommentsList(appState),
+              _buildSavedPostsList(appState),
             ],
           ),
         ),
@@ -1231,24 +1227,23 @@ class _ProfileScreenState extends State<ProfileScreen>
               Container(
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.blue[100], // Light blue background
+                  color: Colors.blue[100],
                   border: Border.all(
                     color: Colors.blue[800]!,
                     width: 2,
                   ),
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.all(4.0), // Reduced padding
+                  padding: const EdgeInsets.all(4.0),
                   child: Text(
                     userData['profileEmoji'] ?? '🙂',
-                    style:
-                        TextStyle(fontSize: 40), // Slightly reduced font size
+                    style: TextStyle(fontSize: 40),
                   ),
                 ),
               ),
               SizedBox(width: 16),
               Text(
-                userData['userName'] ?? 'Anonymous User',
+                userData['userName'] ?? 'Set Username',
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
               SizedBox(width: 16),
@@ -1282,7 +1277,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
               ListTile(
                 leading: Icon(Icons.edit),
-                title: Text('Edit Username'),
+                title: Text('Set/edit username'),
                 onTap: () {
                   Navigator.pop(context);
                   _showUsernameEditor(context, appState, userData['userName']);
@@ -1491,6 +1486,33 @@ class _ProfileScreenState extends State<ProfileScreen>
                 },
               ),
               trailing: Text('${comment['points']} points'),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildSavedPostsList(AppState appState) {
+    return FutureBuilder<List<DocumentSnapshot>>(
+      future: appState.getSavedPosts(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          print('Error in _buildSavedPostsList: ${snapshot.error}');
+          return Center(child: Text('Error loading saved posts: ${snapshot.error}'));
+        }
+        final savedPosts = snapshot.data ?? [];
+        return ListView.builder(
+          itemCount: savedPosts.length,
+          itemBuilder: (context, index) {
+            final post = savedPosts[index].data() as Map<String, dynamic>;
+            return ListTile(
+              title: Text(post['title'] ?? ''),
+              subtitle: Text(post['content'] ?? ''),
+              trailing: Text('${post['points']} points'),
             );
           },
         );
