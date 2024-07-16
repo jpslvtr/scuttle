@@ -1,0 +1,9 @@
+Functionality > flow > look
+
+open -a Simulator
+flutter run
+
+dart fix --dry-run
+dart fix --apply
+
+

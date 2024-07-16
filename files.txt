@@ -1,5 +1,7 @@
 File: app/lib/app_state.dart
 
+// File: app/lib/app_state.dart
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,8 +9,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 class AppState extends ChangeNotifier {
   String? userId;
   String? command;
+  String? userName;
 
-  AppState({this.userId, this.command});
+  AppState({this.userId, this.command, this.userName});
 
   Future<void> initializeUser(String uid) async {
     userId = uid;
@@ -18,6 +21,7 @@ class AppState extends ChangeNotifier {
       if (userDoc.exists) {
         Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
         command = userData['command'] as String?;
+        userName = userData['userName'] as String?;
       }
     } catch (e) {
       print('Error fetching user data: $e');
@@ -28,63 +32,97 @@ class AppState extends ChangeNotifier {
   void clearUserData() {
     userId = null;
     command = null;
+    userName = null;
     notifyListeners();
   }
 
-  Future<void> createPost(String content) async {
-    if (userId == null || command == null) return;
+  Future<bool> isUserNameAvailable(String userName) async {
+    try {
+      QuerySnapshot query = await FirebaseFirestore.instance
+          .collection('users')
+          .where('userName', isEqualTo: userName)
+          .get();
+      return query.docs.isEmpty;
+    } catch (e) {
+      print('Error checking username availability: $e');
+      return false;
+    }
+  }
+
+  Future<bool> createUserWithUserName(User user, String userName) async {
+    if (await isUserNameAvailable(userName)) {
+      try {
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+          'email': user.email,
+          'userName': userName,
+          'createdAt': FieldValue.serverTimestamp(),
+          'profileEmoji': '🙂', // Default emoji
+        }, SetOptions(merge: true));
+        this.userName = userName;
+        notifyListeners();
+        return true;
+      } catch (e) {
+        print('Error creating user with username: $e');
+        return false;
+      }
+    }
+    return false;
+  }
+
+  Future<void> createPost(String title, String content, String feed) async {
+    if (userId == null) return;
 
     await FirebaseFirestore.instance.collection('posts').add({
+      'title': title,
       'content': content,
       'userId': userId,
       'command': command,
-      'upvotes': 0,
-      'downvotes': 0,
+      'feed': feed,
+      'points': 0,
+      'commentCount': 0,
       'timestamp': FieldValue.serverTimestamp(),
     });
 
     notifyListeners();
   }
 
-  Future<void> upvotePost(String postId) async {
+  Future<void> updatePostPoints(String postId, int delta) async {
     if (userId == null) return;
 
     await FirebaseFirestore.instance.collection('posts').doc(postId).update({
-      'upvotes': FieldValue.increment(1),
+      'points': FieldValue.increment(delta),
     });
 
-    notifyListeners();
-  }
-
-  Future<void> downvotePost(String postId) async {
-    if (userId == null) return;
-
-    await FirebaseFirestore.instance.collection('posts').doc(postId).update({
-      'downvotes': FieldValue.increment(1),
-    });
-
-    notifyListeners();
-  }
-
-  Future<void> updateUserCommand(String newCommand) async {
-    if (userId == null) return;
-
-    await FirebaseFirestore.instance.collection('users').doc(userId).update({
-      'command': newCommand,
-    });
-
-    command = newCommand;
     notifyListeners();
   }
 
   Future<void> createComment(String postId, String content) async {
     if (userId == null) return;
 
-    await FirebaseFirestore.instance.collection('comments').add({
+    DocumentReference commentRef =
+        await FirebaseFirestore.instance.collection('comments').add({
       'postId': postId,
       'userId': userId,
       'content': content,
+      'points': 0,
       'timestamp': FieldValue.serverTimestamp(),
+    });
+
+    await FirebaseFirestore.instance.collection('posts').doc(postId).update({
+      'commentCount': FieldValue.increment(1),
+    });
+
+    notifyListeners();
+  }
+
+  Future<void> updateCommentPoints(String commentId, int delta) async {
+    if (userId == null) return;
+
+    await FirebaseFirestore.instance
+        .collection('comments')
+        .doc(commentId)
+        .update({
+      'points': FieldValue.increment(delta),
     });
 
     notifyListeners();
@@ -124,9 +162,16 @@ class AppState extends ChangeNotifier {
   Future<Map<String, dynamic>> getUserProfile() async {
     if (userId == null) return {};
 
-    DocumentSnapshot userDoc =
-        await FirebaseFirestore.instance.collection('users').doc(userId).get();
-    return userDoc.data() as Map<String, dynamic>;
+    try {
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .get();
+      return userDoc.data() as Map<String, dynamic>;
+    } catch (e) {
+      print('Error fetching user profile: $e');
+      return {};
+    }
   }
 
   Future<void> updateUserProfile(Map<String, dynamic> data) async {
@@ -138,14 +183,72 @@ class AppState extends ChangeNotifier {
         .update(data);
     notifyListeners();
   }
+
+  Future<void> deletePost(String postId) async {
+    if (userId == null) return;
+
+    try {
+      DocumentSnapshot postDoc = await FirebaseFirestore.instance
+          .collection('posts')
+          .doc(postId)
+          .get();
+
+      if (postDoc.exists) {
+        Map<String, dynamic> postData = postDoc.data() as Map<String, dynamic>;
+        if (postData['userId'] == userId) {
+          await FirebaseFirestore.instance
+              .collection('posts')
+              .doc(postId)
+              .delete();
+
+          QuerySnapshot comments = await FirebaseFirestore.instance
+              .collection('comments')
+              .where('postId', isEqualTo: postId)
+              .get();
+
+          for (DocumentSnapshot commentDoc in comments.docs) {
+            await commentDoc.reference.delete();
+          }
+
+          notifyListeners();
+        } else {
+          throw Exception('You do not have permission to delete this post');
+        }
+      } else {
+        throw Exception('Post not found');
+      }
+    } catch (e) {
+      print('Error deleting post: $e');
+      throw e;
+    }
+  }
+
+  Future<void> updateProfileEmoji(String emoji) async {
+    if (userId == null) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .update({'profileEmoji': emoji});
+      notifyListeners();
+    } catch (e) {
+      print('Error updating profile emoji: $e');
+    }
+  }
 }
 
 =================================================================
 
 File: app/lib/home_screen.dart
 
+// File: app/lib/home_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
+import 'app_state.dart';
+import 'post_detail_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -168,7 +271,7 @@ class HomeScreen extends StatelessWidget {
           Expanded(
             child: TabBarView(
               children: [
-                PostFeed(sortBy: 'upvotes'),
+                PostFeed(sortBy: 'points'),
                 PostFeed(sortBy: 'timestamp'),
               ],
             ),
@@ -186,13 +289,23 @@ class PostFeed extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final currentFeed = Provider.of<AppState>(context).command ?? 'All DOD';
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('posts')
+          .where('feed', isEqualTo: currentFeed)
           .orderBy(sortBy, descending: true)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
+          print('Error in PostFeed: ${snapshot.error}');
+          print('Error details:');
+          print(snapshot.error.toString());
+          if (snapshot.error is FirebaseException) {
+            FirebaseException e = snapshot.error as FirebaseException;
+            print('Firebase Exception Code: ${e.code}');
+            print('Firebase Exception Message: ${e.message}');
+          }
           return Center(child: Text('Error: ${snapshot.error}'));
         }
 
@@ -204,10 +317,13 @@ class PostFeed extends StatelessWidget {
           children: snapshot.data!.docs.map((DocumentSnapshot document) {
             Map<String, dynamic> data = document.data() as Map<String, dynamic>;
             return PostCard(
+              title: data['title'] ?? '',
               content: data['content'] ?? '',
-              upvotes: data['upvotes'] ?? 0,
-              downvotes: data['downvotes'] ?? 0,
+              points: data['points'] ?? 0,
+              commentCount: data['commentCount'] ?? 0,
               timestamp: data['timestamp']?.toDate() ?? DateTime.now(),
+              postId: document.id,
+              userId: data['userId'] ?? '',
             );
           }).toList(),
         );
@@ -217,63 +333,157 @@ class PostFeed extends StatelessWidget {
 }
 
 class PostCard extends StatelessWidget {
+  final String title;
   final String content;
-  final int upvotes;
-  final int downvotes;
+  final int points;
+  final int commentCount;
   final DateTime timestamp;
+  final String postId;
+  final String userId;
 
   const PostCard({
     Key? key,
+    required this.title,
     required this.content,
-    required this.upvotes,
-    required this.downvotes,
+    required this.points,
+    required this.commentCount,
     required this.timestamp,
+    required this.postId,
+    required this.userId,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
+    final appState = Provider.of<AppState>(context, listen: false);
+    final isCreator = appState.userId == userId;
+
     return Card(
       margin: EdgeInsets.all(8.0),
-      child: Padding(
-        padding: EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(content),
-            SizedBox(height: 8.0),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('${upvotes - downvotes} points'),
-                Text('${timestamp.toString().split('.')[0]}'),
-              ],
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => PostDetailScreen(postId: postId),
             ),
-            Row(
-              children: [
-                IconButton(
-                  icon: Icon(Icons.arrow_upward),
-                  onPressed: () {
-                    // Implement upvote functionality
-                  },
-                ),
-                IconButton(
-                  icon: Icon(Icons.arrow_downward),
-                  onPressed: () {
-                    // Implement downvote functionality
-                  },
-                ),
-                IconButton(
-                  icon: Icon(Icons.comment),
-                  onPressed: () {
-                    // Implement comment functionality
-                  },
-                ),
-              ],
-            ),
-          ],
+          );
+        },
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  if (isCreator)
+                    IconButton(
+                      icon: Icon(Icons.delete),
+                      onPressed: () => _showDeleteConfirmation(context),
+                    ),
+                ],
+              ),
+              SizedBox(height: 8.0),
+              Text(content),
+              SizedBox(height: 8.0),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Text('$points'),
+                      IconButton(
+                        icon: Icon(Icons.arrow_upward),
+                        onPressed: () {
+                          appState.updatePostPoints(postId, 1);
+                        },
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.arrow_downward),
+                        onPressed: () {
+                          appState.updatePostPoints(postId, -1);
+                        },
+                      ),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.comment),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  PostDetailScreen(postId: postId),
+                            ),
+                          );
+                        },
+                      ),
+                      Text('$commentCount'),
+                    ],
+                  ),
+                  Text(getRelativeTime(timestamp)),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  void _showDeleteConfirmation(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Delete Post'),
+          content: Text(
+              'Are you sure you want to delete this post? This action cannot be undone.'),
+          actions: <Widget>[
+            TextButton(
+              child: Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: Text('Delete', style: TextStyle(color: Colors.red)),
+              onPressed: () {
+                Provider.of<AppState>(context, listen: false)
+                    .deletePost(postId);
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+String getRelativeTime(DateTime dateTime) {
+  final now = DateTime.now();
+  final difference = now.difference(dateTime);
+
+  if (difference.inSeconds < 60) {
+    return 'Now';
+  } else if (difference.inMinutes < 60) {
+    return '${difference.inMinutes} min ago';
+  } else if (difference.inHours < 24) {
+    return '${difference.inHours} hr ago';
+  } else {
+    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'} ago';
   }
 }
 
@@ -324,7 +534,17 @@ class LoginScreen extends StatelessWidget {
                 backgroundColor: Colors.white,
                 padding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
               ),
-child: Text('Sign in with Google'),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Image.asset(
+                    'assets/google_logo.png',
+                    height: 24.0,
+                  ),
+                  SizedBox(width: 10),
+                  Text('Sign in with Google'),
+                ],
+              ),
               onPressed: () async {
                 try {
                   final UserCredential userCredential =
@@ -440,21 +660,312 @@ class MessagesScreen extends StatelessWidget {
 
 =================================================================
 
+File: app/lib/post_detail_screen.dart
+
+// File: app/lib/post_detail_screen.dart
+
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
+import 'app_state.dart';
+
+class PostDetailScreen extends StatelessWidget {
+  final String postId;
+
+  const PostDetailScreen({Key? key, required this.postId}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Post Details'),
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: StreamBuilder<DocumentSnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('posts')
+                    .doc(postId)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return Center(child: Text('Error: ${snapshot.error}'));
+                  }
+
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return Center(child: CircularProgressIndicator());
+                  }
+
+                  Map<String, dynamic> postData =
+                      snapshot.data!.data() as Map<String, dynamic>;
+
+                  return ListView(
+                    padding: EdgeInsets.all(16.0),
+                    children: [
+                      Text(
+                        postData['title'] ?? '',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      SizedBox(height: 8.0),
+                      Text(postData['content'] ?? ''),
+                      SizedBox(height: 16.0),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Text('${postData['points']}'),
+                              IconButton(
+                                icon: Icon(Icons.arrow_upward),
+                                onPressed: () {
+                                  Provider.of<AppState>(context, listen: false)
+                                      .updatePostPoints(postId, 1);
+                                },
+                              ),
+                              IconButton(
+                                icon: Icon(Icons.arrow_downward),
+                                onPressed: () {
+                                  Provider.of<AppState>(context, listen: false)
+                                      .updatePostPoints(postId, -1);
+                                },
+                              ),
+                            ],
+                          ),
+                          Row(
+                            children: [
+                              Icon(Icons.comment),
+                              SizedBox(width: 4),
+                              Text('${postData['commentCount']}'),
+                            ],
+                          ),
+                          Text(getRelativeTime(postData['timestamp'].toDate())),
+                        ],
+                      ),
+                      Divider(),
+                      Text(
+                        'Comments',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      SizedBox(height: 8.0),
+                      CommentList(postId: postId),
+                    ],
+                  );
+                },
+              ),
+            ),
+            CommentInput(postId: postId),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class CommentList extends StatelessWidget {
+  final String postId;
+
+  const CommentList({Key? key, required this.postId}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('comments')
+          .where('postId', isEqualTo: postId)
+          .orderBy('timestamp', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          print('Error in CommentList: ${snapshot.error}');
+          print('Error details:');
+          print(snapshot.error.toString());
+          if (snapshot.error is FirebaseException) {
+            FirebaseException e = snapshot.error as FirebaseException;
+            print('Firebase Exception Code: ${e.code}');
+            print('Firebase Exception Message: ${e.message}');
+          }
+          return Center(child: Text('Error loading comments'));
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(child: CircularProgressIndicator());
+        }
+
+        return ListView(
+          shrinkWrap: true,
+          physics: NeverScrollableScrollPhysics(),
+          children: snapshot.data!.docs.map((DocumentSnapshot document) {
+            Map<String, dynamic> data = document.data() as Map<String, dynamic>;
+            return CommentCard(
+              content: data['content'] ?? '',
+              points: data['points'] ?? 0,
+              timestamp: data['timestamp']?.toDate() ?? DateTime.now(),
+              commentId: document.id,
+              userId: data['userId'] ?? '',
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+}
+
+class CommentCard extends StatelessWidget {
+  final String content;
+  final int points;
+  final DateTime timestamp;
+  final String commentId;
+  final String userId;
+
+  const CommentCard({
+    Key? key,
+    required this.content,
+    required this.points,
+    required this.timestamp,
+    required this.commentId,
+    required this.userId,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final appState = Provider.of<AppState>(context, listen: false);
+
+    return Card(
+      margin: EdgeInsets.symmetric(vertical: 4.0),
+      child: Padding(
+        padding: EdgeInsets.all(8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(content),
+            SizedBox(height: 8.0),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Text('$points'),
+                    IconButton(
+                      icon: Icon(Icons.arrow_upward),
+                      onPressed: () {
+                        appState.updateCommentPoints(commentId, 1);
+                      },
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.arrow_downward),
+                      onPressed: () {
+                        appState.updateCommentPoints(commentId, -1);
+                      },
+                    ),
+                  ],
+                ),
+                Text(getRelativeTime(timestamp)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class CommentInput extends StatefulWidget {
+  final String postId;
+
+  const CommentInput({Key? key, required this.postId}) : super(key: key);
+
+  @override
+  _CommentInputState createState() => _CommentInputState();
+}
+
+class _CommentInputState extends State<CommentInput> {
+  final TextEditingController _commentController = TextEditingController();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.fromLTRB(8.0, 8.0, 8.0, 20.0),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _commentController,
+              decoration: InputDecoration(
+                hintText: 'Add a comment...',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+          SizedBox(width: 8.0),
+          ElevatedButton(
+            onPressed: () {
+              if (_commentController.text.isNotEmpty) {
+                Provider.of<AppState>(context, listen: false).createComment(
+                  widget.postId,
+                  _commentController.text,
+                );
+                _commentController.clear();
+              }
+            },
+            child: Text('Post'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _commentController.dispose();
+    super.dispose();
+  }
+}
+
+String getRelativeTime(DateTime dateTime) {
+  final now = DateTime.now();
+  final difference = now.difference(dateTime);
+
+  if (difference.inSeconds < 60) {
+    return 'Now';
+  } else if (difference.inMinutes < 60) {
+    return '${difference.inMinutes} min ago';
+  } else if (difference.inHours < 24) {
+    return '${difference.inHours} hr ago';
+  } else {
+    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'} ago';
+  }
+}
+
+=================================================================
+
 File: app/lib/post_screen.dart
+
+// File: app/lib/post_screen.dart
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'app_state.dart';
 
 class PostScreen extends StatefulWidget {
-  const PostScreen({Key? key}) : super(key: key);
+  final String currentFeed;
+
+  const PostScreen({Key? key, required this.currentFeed}) : super(key: key);
 
   @override
   _PostScreenState createState() => _PostScreenState();
 }
 
 class _PostScreenState extends State<PostScreen> {
-  final TextEditingController _postController = TextEditingController();
+  final TextEditingController _titleController = TextEditingController();
+  final TextEditingController _bodyController = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
@@ -465,9 +976,19 @@ class _PostScreenState extends State<PostScreen> {
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             TextField(
-              controller: _postController,
+              controller: _titleController,
+              decoration: InputDecoration(
+                hintText: 'Title',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 1,
+            ),
+            SizedBox(height: 16),
+            TextField(
+              controller: _bodyController,
               decoration: InputDecoration(
                 hintText: 'What\'s on your mind?',
                 border: OutlineInputBorder(),
@@ -475,18 +996,43 @@ class _PostScreenState extends State<PostScreen> {
               maxLines: 5,
             ),
             SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () {
-                if (_postController.text.isNotEmpty) {
-                  Provider.of<AppState>(context, listen: false)
-                      .createPost(_postController.text);
-                  _postController.clear();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Post created successfully')),
-                  );
-                }
-              },
-              child: Text('Post'),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                  },
+                  child: Text('Cancel'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.grey,
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    if (_titleController.text.isNotEmpty &&
+                        _bodyController.text.isNotEmpty) {
+                      await Provider.of<AppState>(context, listen: false)
+                          .createPost(
+                        _titleController.text,
+                        _bodyController.text,
+                        widget.currentFeed,
+                      );
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Post created successfully')),
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                            content:
+                                Text('Please enter both title and content')),
+                      );
+                    }
+                  },
+                  child: Text('Post'),
+                ),
+              ],
             ),
           ],
         ),
@@ -496,7 +1042,8 @@ class _PostScreenState extends State<PostScreen> {
 
   @override
   void dispose() {
-    _postController.dispose();
+    _titleController.dispose();
+    _bodyController.dispose();
     super.dispose();
   }
 }
@@ -505,149 +1052,229 @@ class _PostScreenState extends State<PostScreen> {
 
 File: app/lib/profile_screen.dart
 
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'app_state.dart';
-
-class ProfileScreen extends StatelessWidget {
-  const ProfileScreen({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Text('Profile screen - To be implemented'),
-    );
-  }
-}
-
-=================================================================
-
-File: app/lib/scuttlebutt_app.dart
-
-import 'package:flutter/material.dart';
-import 'home_screen.dart';
-import 'messages_screen.dart';
-import 'profile_screen.dart';
-import 'settings_screen.dart';
-
-class ScuttlebuttApp extends StatelessWidget {
-  const ScuttlebuttApp({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: const Color(0xFF8C1515),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF8C1515),
-          foregroundColor: Colors.white,
-        ),
-        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-          selectedItemColor: Color(0xFF8C1515),
-          unselectedItemColor: Colors.grey,
-        ),
-        floatingActionButtonTheme: const FloatingActionButtonThemeData(
-          backgroundColor: Color(0xFF8C1515),
-          foregroundColor: Colors.white,
-        ),
-      ),
-      home: ScuttlebuttHomePage(),
-    );
-  }
-}
-
-class ScuttlebuttHomePage extends StatefulWidget {
-  const ScuttlebuttHomePage({Key? key}) : super(key: key);
-
-  @override
-  _ScuttlebuttHomePageState createState() => _ScuttlebuttHomePageState();
-}
-
-class _ScuttlebuttHomePageState extends State<ScuttlebuttHomePage> {
-  int _selectedIndex = 0;
-
-  final List<Widget> _widgetOptions = <Widget>[
-    const HomeScreen(),
-    const MessagesScreen(),
-    const ProfileScreen(),
-  ];
-
-  final List<String> _titles = ['Home', 'Messages', 'Profile'];
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
-
-  void _openSettings() {
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        opaque: false,
-        pageBuilder: (BuildContext context, _, __) {
-          return const SettingsScreen();
-        },
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          const begin = Offset(1.0, 0.0);
-          const end = Offset.zero;
-          const curve = Curves.easeInOut;
-          var tween =
-              Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
-          var offsetAnimation = animation.drive(tween);
-          return SlideTransition(position: offsetAnimation, child: child);
-        },
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_titles[_selectedIndex]),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.menu),
-            onPressed: _openSettings,
-          ),
-        ],
-      ),
-      body: _widgetOptions.elementAt(_selectedIndex),
-      bottomNavigationBar: BottomNavigationBar(
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.message),
-            label: 'Messages',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Profile',
-          ),
-        ],
-        currentIndex: _selectedIndex,
-        selectedItemColor:
-            Colors.blue[800],
-        onTap: _onItemTapped,
-        showUnselectedLabels: true,
-      ),
-    );
-  }
-}
-
-=================================================================
-
-File: app/lib/settings_screen.dart
+// File: app/lib/profile_screen.dart
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'app_state.dart';
 import 'login_screen.dart';
+
+class ProfileScreen extends StatefulWidget {
+  const ProfileScreen({Key? key}) : super(key: key);
+
+  @override
+  _ProfileScreenState createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appState = Provider.of<AppState>(context);
+    return Scaffold(
+      body: Column(
+        children: [
+          _buildProfileHeader(appState),
+          TabBar(
+            controller: _tabController,
+            tabs: [
+              Tab(text: 'Posts'),
+              Tab(text: 'Comments'),
+            ],
+            indicatorColor: Colors.blue[800],
+            labelColor: Colors.blue[800],
+            unselectedLabelColor: Colors.grey,
+          ),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildPostsList(appState),
+                _buildCommentsList(appState),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileHeader(AppState appState) {
+    return FutureBuilder<Map<String, dynamic>>(
+      future: appState.getUserProfile(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return CircularProgressIndicator();
+        }
+        if (snapshot.hasError) {
+          print('Error in _buildProfileHeader: ${snapshot.error}');
+          return Text('Error loading profile: ${snapshot.error}');
+        }
+        final userData = snapshot.data ?? {};
+        return Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: [
+              GestureDetector(
+                onTap: () => _showEmojiPicker(context, appState),
+                child: Text(
+                  userData['profileEmoji'] ?? '😊',
+                  style: TextStyle(fontSize: 60),
+                ),
+              ),
+              SizedBox(height: 16),
+              Text(
+                userData['userName'] ?? 'Anonymous User',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => SettingsScreen()),
+                  );
+                },
+                child: Text('Settings'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showEmojiPicker(BuildContext context, AppState appState) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Choose an emoji'),
+          content: Wrap(
+            spacing: 10,
+            children: [
+              '🙂',
+              '😎',
+              '🤓',
+              '🧐',
+              '🤠',
+              '👨‍💻',
+              '👩‍💻',
+              '🦸‍♂️',
+              '🦸‍♀️',
+              '🥷'
+            ]
+                .map((emoji) => GestureDetector(
+                      onTap: () {
+                        appState.updateProfileEmoji(emoji);
+                        Navigator.of(context).pop();
+                      },
+                      child: Text(emoji, style: TextStyle(fontSize: 40)),
+                    ))
+                .toList(),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPostsList(AppState appState) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('posts')
+          .where('userId', isEqualTo: appState.userId)
+          .orderBy('timestamp', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          print('Error in _buildPostsList: ${snapshot.error}');
+          return Center(child: Text('Error loading posts: ${snapshot.error}'));
+        }
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(child: CircularProgressIndicator());
+        }
+        final posts = snapshot.data!.docs;
+        return ListView.builder(
+          itemCount: posts.length,
+          itemBuilder: (context, index) {
+            final post = posts[index].data() as Map<String, dynamic>;
+            return ListTile(
+              title: Text(post['title'] ?? ''),
+              subtitle: Text(post['content'] ?? ''),
+              trailing: Text('${post['points']} points'),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildCommentsList(AppState appState) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('comments')
+          .where('userId', isEqualTo: appState.userId)
+          .orderBy('timestamp', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          print('Error in _buildCommentsList: ${snapshot.error}');
+          return Center(
+              child: Text('Error loading comments: ${snapshot.error}'));
+        }
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(child: CircularProgressIndicator());
+        }
+        final comments = snapshot.data!.docs;
+        return ListView.builder(
+          itemCount: comments.length,
+          itemBuilder: (context, index) {
+            final comment = comments[index].data() as Map<String, dynamic>;
+            return ListTile(
+              title: Text(comment['content'] ?? ''),
+              subtitle: FutureBuilder<DocumentSnapshot>(
+                future: FirebaseFirestore.instance
+                    .collection('posts')
+                    .doc(comment['postId'])
+                    .get(),
+                builder: (context, postSnapshot) {
+                  if (postSnapshot.connectionState == ConnectionState.waiting) {
+                    return Text('Loading post...');
+                  }
+                  if (postSnapshot.hasError) {
+                    print(
+                        'Error loading post for comment: ${postSnapshot.error}');
+                    return Text('Error loading post: ${postSnapshot.error}');
+                  }
+                  final postData =
+                      postSnapshot.data!.data() as Map<String, dynamic>;
+                  return Text('On post: ${postData['title']}');
+                },
+              ),
+              trailing: Text('${comment['points']} points'),
+            );
+          },
+        );
+      },
+    );
+  }
+}
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -656,17 +1283,72 @@ class SettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Settings',
-          style: TextStyle(color: Colors.white), // Set text color to white
-        ),
-        backgroundColor: Colors.blue[800],
+        title: Text('Settings'),
       ),
       body: ListView(
         children: [
+          _buildSectionHeader('App'),
           ListTile(
-            leading: const Icon(Icons.exit_to_app),
-            title: const Text('Log Out'),
+            leading: Icon(Icons.notifications),
+            title: Text('Notification options'),
+            onTap: () {
+              // TODO: Implement notification options
+              print('Notification options tapped');
+            },
+          ),
+          _buildSectionHeader('Support'),
+          ListTile(
+            leading: Icon(Icons.privacy_tip),
+            title: Text('Privacy policy'),
+            onTap: () {
+              // TODO: Show privacy policy
+              print('Privacy policy tapped');
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.description),
+            title: Text('Terms of Service'),
+            onTap: () {
+              // TODO: Show Terms of Service
+              print('Terms of Service tapped');
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.people),
+            title: Text('Community guidelines'),
+            onTap: () {
+              // TODO: Show community guidelines
+              print('Community guidelines tapped');
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.bug_report),
+            title: Text('Report a bug'),
+            onTap: () {
+              // TODO: Implement bug reporting
+              print('Report a bug tapped');
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.contact_support),
+            title: Text('Contact us'),
+            onTap: () {
+              // TODO: Implement contact functionality
+              print('Contact us tapped');
+            },
+          ),
+          _buildSectionHeader('Account'),
+          ListTile(
+            leading: Icon(Icons.sync),
+            title: Text('Change commands'),
+            onTap: () {
+              // TODO: Implement change commands functionality
+              print('Change commands tapped');
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.exit_to_app),
+            title: Text('Log Out'),
             onTap: () async {
               await FirebaseAuth.instance.signOut();
               Provider.of<AppState>(context, listen: false).clearUserData();
@@ -677,8 +1359,8 @@ class SettingsScreen extends StatelessWidget {
             },
           ),
           ListTile(
-            leading: const Icon(Icons.delete_forever, color: Colors.red),
-            title: const Text(
+            leading: Icon(Icons.delete_forever, color: Colors.red),
+            title: Text(
               'Delete Account',
               style: TextStyle(color: Colors.red),
             ),
@@ -687,6 +1369,20 @@ class SettingsScreen extends StatelessWidget {
             },
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+          color: Colors.blue[800],
+        ),
       ),
     );
   }
@@ -721,6 +1417,7 @@ class SettingsScreen extends StatelessWidget {
                     (Route<dynamic> route) => false,
                   );
                 } catch (e) {
+                  print('Error deleting account: $e');
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Failed to delete account: $e')),
                   );
@@ -730,6 +1427,189 @@ class SettingsScreen extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+=================================================================
+
+File: app/lib/scuttlebutt_app.dart
+
+// File: app/lib/scuttlebutt_app.dart
+
+import 'package:flutter/material.dart';
+import 'home_screen.dart';
+import 'messages_screen.dart';
+import 'profile_screen.dart';
+import 'post_screen.dart';
+
+class ScuttlebuttApp extends StatelessWidget {
+  const ScuttlebuttApp({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      theme: ThemeData(
+        useMaterial3: true,
+        colorSchemeSeed: Colors.blue[800],
+        appBarTheme: AppBarTheme(
+          backgroundColor: Colors.blue[800],
+          foregroundColor: Colors.white,
+        ),
+        bottomNavigationBarTheme: BottomNavigationBarThemeData(
+          selectedItemColor: Colors.blue[800],
+          unselectedItemColor: Colors.grey,
+        ),
+        floatingActionButtonTheme: FloatingActionButtonThemeData(
+          backgroundColor: Colors.blue[800],
+          foregroundColor: Colors.white,
+        ),
+      ),
+      home: ScuttlebuttHomePage(),
+    );
+  }
+}
+
+class ScuttlebuttHomePage extends StatefulWidget {
+  const ScuttlebuttHomePage({Key? key}) : super(key: key);
+
+  @override
+  _ScuttlebuttHomePageState createState() => _ScuttlebuttHomePageState();
+}
+
+class _ScuttlebuttHomePageState extends State<ScuttlebuttHomePage> {
+  int _selectedIndex = 0;
+  String _currentFeed = 'All DOD';
+
+  final List<Widget> _widgetOptions = <Widget>[
+    const HomeScreen(),
+    const MessagesScreen(),
+    const ProfileScreen(),
+  ];
+
+  final List<String> _titles = ['Home', 'Messages', 'Profile'];
+
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
+
+  void _changeFeed(String feed) {
+    setState(() {
+      _currentFeed = feed;
+    });
+    Navigator.pop(context); // Close the drawer
+  }
+
+  Widget _buildFeedOption(String title) {
+    return Column(
+      children: [
+        ListTile(
+          title: Text(
+            title,
+            style: TextStyle(
+              color: _currentFeed == title ? Colors.blue[800] : Colors.black,
+              fontWeight:
+                  _currentFeed == title ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+          onTap: () => _changeFeed(title),
+        ),
+        Divider(height: 1, thickness: 1, color: Colors.grey[300]),
+      ],
+    );
+  }
+
+  String get _appBarTitle {
+    if (_selectedIndex == 0) {
+      return _currentFeed;
+    } else {
+      return 'Scuttlebutt';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_appBarTitle),
+      ),
+      drawer: _selectedIndex == 0
+          ? Drawer(
+              child: Column(
+                children: [
+                  SafeArea(
+                    child: Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.only(
+                          left: 16, bottom: 8, right: 16, top: 32),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Select',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          SizedBox(height: 8),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: ListView(
+                      padding: EdgeInsets.zero,
+                      children: [
+                        Divider(
+                            height: 1, thickness: 1, color: Colors.grey[300]),
+                        _buildFeedOption('All DOD'),
+                        _buildFeedOption('All Navy'),
+                        _buildFeedOption('My Command'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            )
+          : null,
+      body: _widgetOptions.elementAt(_selectedIndex),
+      bottomNavigationBar: BottomNavigationBar(
+        items: const <BottomNavigationBarItem>[
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: 'Home',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.message),
+            label: 'Messages',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person),
+            label: 'Profile',
+          ),
+        ],
+        currentIndex: _selectedIndex,
+        selectedItemColor: Colors.blue[800],
+        onTap: _onItemTapped,
+        showUnselectedLabels: true,
+      ),
+      floatingActionButton: _selectedIndex == 0
+          ? FloatingActionButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => PostScreen(currentFeed: _currentFeed),
+                  ),
+                );
+              },
+              child: Icon(Icons.add),
+            )
+          : null,
     );
   }
 }
@@ -958,9 +1838,39 @@ flutter:
     - assets/
 =================================================================
 
-File: app/analysis_options.yaml
+File: wm-db.txt
 
-include: package:analysis_defaults/flutter.yaml
+// File: wm-db.txt
 
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    match /posts/{postId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null && 
+                    (resource.data.userId == request.auth.uid || 
+                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points', 'commentCount']));
+      allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+    
+    match /comments/{commentId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null && 
+                    (resource.data.userId == request.auth.uid || 
+                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points']));
+      allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+  }
+}
 =================================================================
 
+Google Maps API Key: AIzaSyDKTZVwlg1SO-JlyAH3LZd0F4qYsbjdh3g

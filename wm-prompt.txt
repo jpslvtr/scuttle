@@ -1,0 +1,8 @@
+My app Scuttlebutt is going to be an anonymous feed-based platform for service members to engage with other members of their command, branch of service, and the entire military. The company version of this idea is roughly "Blind." The school version of this idea is roughly "Fizz." The community version of this idea used to be "Yik Yak." Please read the attached file thoroughly. It contains the code for Scuttlebutt and the Firestore database rules.
+
+When giving me code, please give me the full code for the file that the code lives in. Not just the code that needs editing; even the unchanged parts. I shouldn't see things like "implement functionality here..." or "methods remain the same..." Ensure that the code changes don’t break any existing functionality. Ensure errors are printed to the terminal. If rules need to be updated, give me the complete revised set of rules.
+
+Here's what I'd like help with
+- Ensure the logic is there for signup/login such that the user is forced to set a unique userName on account creation. Username special characters should only allow letters, periods, and underscores. If the user tries to type something that isn't allowed, I'd like visual feedback
+- On the user's profile page, show the userName. no need to show email
+- On the user's profile page, let them change their profile picture, but let the only options be emojis

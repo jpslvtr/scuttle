@@ -1,3 +1,5 @@
+// File: app/lib/app_state.dart
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -5,8 +7,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 class AppState extends ChangeNotifier {
   String? userId;
   String? command;
+  String? userName;
 
-  AppState({this.userId, this.command});
+  AppState({this.userId, this.command, this.userName});
 
   Future<void> initializeUser(String uid) async {
     userId = uid;
@@ -16,6 +19,7 @@ class AppState extends ChangeNotifier {
       if (userDoc.exists) {
         Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
         command = userData['command'] as String?;
+        userName = userData['userName'] as String?;
       }
     } catch (e) {
       print('Error fetching user data: $e');
@@ -23,66 +27,101 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<bool> createUserWithUserName(User user, String userName) async {
+    if (await isUserNameAvailable(userName)) {
+      try {
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+          'email': user.email,
+          'userName': userName,
+          'createdAt': FieldValue.serverTimestamp(),
+          'profileEmoji': '🙂', // Default emoji
+        }, SetOptions(merge: true));
+        this.userName = userName;
+        this.userId = user.uid;
+        notifyListeners();
+        return true;
+      } catch (e) {
+        print('Error creating user with username: $e');
+        return false;
+      }
+    }
+    return false;
+  }
+
   void clearUserData() {
     userId = null;
     command = null;
+    userName = null;
     notifyListeners();
   }
 
-  Future<void> createPost(String content) async {
-    if (userId == null || command == null) return;
+  Future<bool> isUserNameAvailable(String userName) async {
+    try {
+      QuerySnapshot query = await FirebaseFirestore.instance
+          .collection('users')
+          .where('userName', isEqualTo: userName)
+          .get();
+      return query.docs.isEmpty;
+    } catch (e) {
+      print('Error checking username availability: $e');
+      return false;
+    }
+  }
+
+  Future<void> createPost(String title, String content, String feed) async {
+    if (userId == null) return;
 
     await FirebaseFirestore.instance.collection('posts').add({
+      'title': title,
       'content': content,
       'userId': userId,
       'command': command,
-      'upvotes': 0,
-      'downvotes': 0,
+      'feed': feed,
+      'points': 0,
+      'commentCount': 0,
       'timestamp': FieldValue.serverTimestamp(),
     });
 
     notifyListeners();
   }
 
-  Future<void> upvotePost(String postId) async {
+  Future<void> updatePostPoints(String postId, int delta) async {
     if (userId == null) return;
 
     await FirebaseFirestore.instance.collection('posts').doc(postId).update({
-      'upvotes': FieldValue.increment(1),
+      'points': FieldValue.increment(delta),
     });
 
-    notifyListeners();
-  }
-
-  Future<void> downvotePost(String postId) async {
-    if (userId == null) return;
-
-    await FirebaseFirestore.instance.collection('posts').doc(postId).update({
-      'downvotes': FieldValue.increment(1),
-    });
-
-    notifyListeners();
-  }
-
-  Future<void> updateUserCommand(String newCommand) async {
-    if (userId == null) return;
-
-    await FirebaseFirestore.instance.collection('users').doc(userId).update({
-      'command': newCommand,
-    });
-
-    command = newCommand;
     notifyListeners();
   }
 
   Future<void> createComment(String postId, String content) async {
     if (userId == null) return;
 
-    await FirebaseFirestore.instance.collection('comments').add({
+    DocumentReference commentRef =
+        await FirebaseFirestore.instance.collection('comments').add({
       'postId': postId,
       'userId': userId,
       'content': content,
+      'points': 0,
       'timestamp': FieldValue.serverTimestamp(),
+    });
+
+    await FirebaseFirestore.instance.collection('posts').doc(postId).update({
+      'commentCount': FieldValue.increment(1),
+    });
+
+    notifyListeners();
+  }
+
+  Future<void> updateCommentPoints(String commentId, int delta) async {
+    if (userId == null) return;
+
+    await FirebaseFirestore.instance
+        .collection('comments')
+        .doc(commentId)
+        .update({
+      'points': FieldValue.increment(delta),
     });
 
     notifyListeners();
@@ -122,18 +161,83 @@ class AppState extends ChangeNotifier {
   Future<Map<String, dynamic>> getUserProfile() async {
     if (userId == null) return {};
 
-    DocumentSnapshot userDoc =
-        await FirebaseFirestore.instance.collection('users').doc(userId).get();
-    return userDoc.data() as Map<String, dynamic>;
+    try {
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .get();
+      return userDoc.data() as Map<String, dynamic>;
+    } catch (e) {
+      print('Error fetching user profile: $e');
+      return {};
+    }
   }
 
   Future<void> updateUserProfile(Map<String, dynamic> data) async {
     if (userId == null) return;
 
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(userId)
-        .update(data);
-    notifyListeners();
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .update(data);
+      notifyListeners();
+    } catch (e) {
+      print('Error updating user profile: $e');
+    }
+  }
+
+
+  Future<void> deletePost(String postId) async {
+    if (userId == null) return;
+
+    try {
+      DocumentSnapshot postDoc = await FirebaseFirestore.instance
+          .collection('posts')
+          .doc(postId)
+          .get();
+
+      if (postDoc.exists) {
+        Map<String, dynamic> postData = postDoc.data() as Map<String, dynamic>;
+        if (postData['userId'] == userId) {
+          await FirebaseFirestore.instance
+              .collection('posts')
+              .doc(postId)
+              .delete();
+
+          QuerySnapshot comments = await FirebaseFirestore.instance
+              .collection('comments')
+              .where('postId', isEqualTo: postId)
+              .get();
+
+          for (DocumentSnapshot commentDoc in comments.docs) {
+            await commentDoc.reference.delete();
+          }
+
+          notifyListeners();
+        } else {
+          throw Exception('You do not have permission to delete this post');
+        }
+      } else {
+        throw Exception('Post not found');
+      }
+    } catch (e) {
+      print('Error deleting post: $e');
+      throw e;
+    }
+  }
+
+  Future<void> updateProfileEmoji(String emoji) async {
+    if (userId == null) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .update({'profileEmoji': emoji});
+      notifyListeners();
+    } catch (e) {
+      print('Error updating profile emoji: $e');
+    }
   }
 }
