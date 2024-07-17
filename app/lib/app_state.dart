@@ -11,6 +11,8 @@ class AppState extends ChangeNotifier {
   List<String> savedPosts = [];
   Map<String, int> userVotes = {};
   Map<String, int> userCommentVotes = {};
+  String currentFeed = 'All DOD';
+  int userPoints = 0; // Placeholder for user points
 
   AppState({this.userId, this.command, this.userName});
 
@@ -27,6 +29,7 @@ class AppState extends ChangeNotifier {
         userVotes = Map<String, int>.from(userData['votes'] ?? {});
         userCommentVotes =
             Map<String, int>.from(userData['commentVotes'] ?? {});
+        userPoints = userData['points'] as int? ?? 0; // Initialize user points
       } else {
         await createUserDocument(uid);
       }
@@ -46,10 +49,16 @@ class AppState extends ChangeNotifier {
         'userName': '',
         'votes': {},
         'commentVotes': {},
+        'points': 0, // Initialize user points
       }, SetOptions(merge: true));
     } catch (e) {
       print('Error creating user document: $e');
     }
+  }
+
+  void setCurrentFeed(String feed) {
+    currentFeed = feed;
+    notifyListeners();
   }
 
   void clearUserData() {
@@ -59,6 +68,8 @@ class AppState extends ChangeNotifier {
     savedPosts.clear();
     userVotes.clear();
     userCommentVotes.clear();
+    currentFeed = 'All DOD';
+    userPoints = 0;
     notifyListeners();
   }
 
@@ -142,7 +153,6 @@ class AppState extends ChangeNotifier {
   Future<void> createComment(String postId, String content) async {
     if (userId == null) return;
 
-    // Fetch the current user's data to get the username and profile emoji
     DocumentSnapshot userDoc =
         await FirebaseFirestore.instance.collection('users').doc(userId).get();
 
@@ -210,7 +220,6 @@ class AppState extends ChangeNotifier {
     if (userId == null) return;
 
     try {
-      // Get the user document to check if they had a username
       DocumentSnapshot userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(userId)
@@ -221,7 +230,6 @@ class AppState extends ChangeNotifier {
       bool hadUsername = userNameToCheck != null && userNameToCheck.isNotEmpty;
 
       if (hadUsername) {
-        // Update user's posts
         await FirebaseFirestore.instance
             .collection('posts')
             .where('userId', isEqualTo: userId)
@@ -235,7 +243,6 @@ class AppState extends ChangeNotifier {
           }
         });
 
-        // Update user's comments
         await FirebaseFirestore.instance
             .collection('comments')
             .where('userId', isEqualTo: userId)
@@ -250,10 +257,8 @@ class AppState extends ChangeNotifier {
         });
       }
 
-      // Delete user document
       await FirebaseFirestore.instance.collection('users').doc(userId).delete();
 
-      // Delete Firebase Auth user
       await FirebaseAuth.instance.currentUser?.delete();
 
       clearUserData();

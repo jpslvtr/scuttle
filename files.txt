@@ -85,14 +85,22 @@ class AppState extends ChangeNotifier {
       'title': title,
       'content': content,
       'userId': userId,
+      'userName': userName,
       'command': command,
       'feed': feed,
       'points': 0,
       'commentCount': 0,
       'timestamp': FieldValue.serverTimestamp(),
+      'profileEmoji': await getProfileEmoji(),
     });
 
     notifyListeners();
+  }
+
+  Future<String> getProfileEmoji() async {
+    DocumentSnapshot userDoc =
+        await FirebaseFirestore.instance.collection('users').doc(userId).get();
+    return (userDoc.data() as Map<String, dynamic>)['profileEmoji'] ?? '🙂';
   }
 
   Future<void> updatePostPoints(String postId, int delta) async {
@@ -136,10 +144,20 @@ class AppState extends ChangeNotifier {
   Future<void> createComment(String postId, String content) async {
     if (userId == null) return;
 
+    // Fetch the current user's data to get the username and profile emoji
+    DocumentSnapshot userDoc =
+        await FirebaseFirestore.instance.collection('users').doc(userId).get();
+
+    Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+    String currentUserName = userData['userName'] ?? '';
+    String currentProfileEmoji = userData['profileEmoji'] ?? '🙂';
+
     DocumentReference commentRef =
         await FirebaseFirestore.instance.collection('comments').add({
       'postId': postId,
       'userId': userId,
+      'userName': currentUserName,
+      'profileEmoji': currentProfileEmoji,
       'content': content,
       'points': 0,
       'timestamp': FieldValue.serverTimestamp(),
@@ -434,34 +452,114 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'app_state.dart';
 import 'post_card.dart';
+import 'post_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Column(
-        children: [
-          TabBar(
-            tabs: [
-              Tab(text: 'All Posts'),
-              Tab(text: 'My Command'),
-            ],
-            indicatorColor: Colors.blue[800],
-            labelColor: Colors.blue[800],
-            unselectedLabelColor: Colors.grey,
-          ),
-          Expanded(
-            child: TabBarView(
-              children: [
-                PostFeed(feedType: 'All DOD'),
-                PostFeed(feedType: 'My Command'),
-              ],
+    return Scaffold(
+      appBar: AppBar(
+        leading: Builder(
+          builder: (BuildContext context) {
+            return IconButton(
+              icon: const Icon(Icons.menu),
+              onPressed: () {
+                Scaffold.of(context).openDrawer();
+              },
+            );
+          },
+        ),
+        title: Text('Scuttlebutt'),
+        actions: [
+          Container(
+            margin: EdgeInsets.only(right: 10),
+            child: ElevatedButton(
+              child: Icon(Icons.add, color: Colors.white),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue[800]?.withOpacity(0.8),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: EdgeInsets.all(8),
+                minimumSize: Size(40, 40),
+              ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => PostScreen(currentFeed: 'All DOD'),
+                  ),
+                );
+              },
             ),
           ),
         ],
+      ),
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            DrawerHeader(
+              decoration: BoxDecoration(
+                color: Colors.blue,
+              ),
+              child: Text(
+                'Select Community',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                ),
+              ),
+            ),
+            ListTile(
+              title: Text('All DOD'),
+              onTap: () {
+                Navigator.pop(context);
+              },
+            ),
+            ListTile(
+              title: Text('All Navy'),
+              onTap: () {
+                Navigator.pop(context);
+              },
+            ),
+            ListTile(
+              title: Text('My Command'),
+              onTap: () {
+                Navigator.pop(context);
+              },
+            ),
+          ],
+        ),
+      ),
+      body: SafeArea(
+        child: DefaultTabController(
+          length: 2,
+          child: Column(
+            children: [
+              TabBar(
+                tabs: [
+                  Tab(text: 'All Posts'),
+                  Tab(text: 'My Command'),
+                ],
+                indicatorColor: Colors.blue[800],
+                labelColor: Colors.blue[800],
+                unselectedLabelColor: Colors.grey,
+              ),
+              Expanded(
+                child: TabBarView(
+                  children: [
+                    PostFeed(feedType: 'All DOD'),
+                    PostFeed(feedType: 'My Command'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -511,6 +609,8 @@ class PostFeed extends StatelessWidget {
               timestamp: data['timestamp']?.toDate() ?? DateTime.now(),
               postId: document.id,
               userId: data['userId'] ?? '',
+              userName: data['userName'] ?? '',
+              profileEmoji: data['profileEmoji'] ?? '🙂',
             );
           }).toList(),
         );
@@ -733,6 +833,8 @@ class PostCard extends StatelessWidget {
   final DateTime timestamp;
   final String postId;
   final String userId;
+  final String userName;
+  final String profileEmoji;
   final bool isDetailView;
 
   const PostCard({
@@ -744,6 +846,8 @@ class PostCard extends StatelessWidget {
     required this.timestamp,
     required this.postId,
     required this.userId,
+    required this.userName,
+    required this.profileEmoji,
     this.isDetailView = false,
   }) : super(key: key);
 
@@ -775,65 +879,26 @@ class PostCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Expanded(
-                    child: FutureBuilder<DocumentSnapshot>(
-                      future: FirebaseFirestore.instance
-                          .collection('posts')
-                          .doc(postId)
-                          .get(),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return CircularProgressIndicator();
-                        }
-                        if (snapshot.hasError) {
-                          print('Error loading post data: ${snapshot.error}');
-                          return Text('🙂 @anonymous');
-                        }
-                        final postData =
-                            snapshot.data?.data() as Map<String, dynamic>?;
-                        final userName = postData?['userName'] as String?;
-                        final emoji = postData?['profileEmoji'] as String?;
-
-                        if (userName == '[deleted]') {
-                          return Row(
-                            children: [
-                              Text('🫥'),
-                              SizedBox(width: 4),
-                              Text(
-                                '[deleted]',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          );
-                        }
-
-                        return Row(
-                          children: [
-                            Text(emoji ?? '🙂'),
-                            SizedBox(width: 4),
-                            Text(
-                              userName == null || userName.isEmpty
-                                  ? '@anonymous'
-                                  : '@$userName',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            SizedBox(width: 8),
-                            Text(
-                              getRelativeTime(timestamp),
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ],
-                        );
-                      },
+                    child: Row(
+                      children: [
+                        Text(profileEmoji),
+                        SizedBox(width: 4),
+                        Text(
+                          userName.isEmpty ? '@anonymous' : '@$userName',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          getRelativeTime(timestamp),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   if (isCreator && !isDetailView)
@@ -867,7 +932,10 @@ class PostCard extends StatelessWidget {
                   Row(
                     children: [
                       IconButton(
-                        icon: Icon(Icons.arrow_upward),
+                        icon: Icon(Icons.arrow_upward,
+                            color: appState.userVotes[postId] == 1
+                                ? Colors.red
+                                : null),
                         onPressed: () {
                           appState.updatePostPoints(postId, 1);
                         },
@@ -1034,7 +1102,12 @@ class PostDetailScreen extends StatelessWidget {
                           Row(
                             children: [
                               IconButton(
-                                icon: Icon(Icons.arrow_upward),
+                                icon: Icon(Icons.arrow_upward,
+                                    color: Provider.of<AppState>(context)
+                                                .userVotes[postId] ==
+                                            1
+                                        ? Colors.red
+                                        : null),
                                 onPressed: () {
                                   Provider.of<AppState>(context, listen: false)
                                       .updatePostPoints(postId, 1);
@@ -1064,7 +1137,7 @@ class PostDetailScreen extends StatelessWidget {
                               color: Provider.of<AppState>(context)
                                       .savedPosts
                                       .contains(postId)
-                                  ? Colors.blue[800]
+                                  ? Colors.grey[700]
                                   : null,
                             ),
                             onPressed: () {
@@ -1213,7 +1286,7 @@ class CommentList extends StatelessWidget {
               timestamp: data['timestamp']?.toDate() ?? DateTime.now(),
               commentId: document.id,
               userName: data['userName'] ?? '',
-              profileEmoji: data['profileEmoji'] ?? '',
+              profileEmoji: data['profileEmoji'] ?? '🙂',
               userId: data['userId'] ?? '',
               postId: postId,
             );
@@ -1291,9 +1364,7 @@ class CommentCard extends StatelessWidget {
                     ),
                     Text('$points', style: TextStyle(fontSize: 12)),
                     IconButton(
-                      icon: Icon(Icons.arrow_downward,
-                          size: 16,
-                          color: currentVote == -1 ? Colors.blue : null),
+                      icon: Icon(Icons.arrow_downward, size: 16),
                       onPressed: () {
                         appState.updateCommentPoints(
                             commentId, currentVote == -1 ? 1 : -1);
@@ -1317,28 +1388,12 @@ class CommentCard extends StatelessWidget {
   }
 
   Widget _buildUserInfo() {
-    if (userName == '[deleted]') {
-      return Row(
-        children: [
-          Text('🫥'),
-          SizedBox(width: 4),
-          Text(
-            '[deleted]',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      );
-    }
-
     return Row(
       children: [
-        Text(profileEmoji.isNotEmpty ? profileEmoji : '🙂'),
+        Text(profileEmoji),
         SizedBox(width: 4),
         Text(
-          userName.isNotEmpty ? '@$userName' : '@anonymous',
+          userName.isEmpty ? '@anonymous' : '@$userName',
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.bold,
@@ -1589,31 +1644,33 @@ class _ProfileScreenState extends State<ProfileScreen>
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
-    return Column(
-      children: [
-        _buildProfileHeader(appState),
-        TabBar(
-          controller: _tabController,
-          tabs: [
-            Tab(text: 'My Posts'),
-            Tab(text: 'My Comments'),
-            Tab(text: 'Saved'),
-          ],
-          indicatorColor: Colors.blue[800],
-          labelColor: Colors.blue[800],
-          unselectedLabelColor: Colors.grey,
-        ),
-        Expanded(
-          child: TabBarView(
+    return SafeArea(
+      child: Column(
+        children: [
+          _buildProfileHeader(appState),
+          TabBar(
             controller: _tabController,
-            children: [
-              _buildPostsList(appState),
-              _buildCommentsList(appState),
-              _buildSavedPostsList(appState),
+            tabs: [
+              Tab(text: 'My Posts'),
+              Tab(text: 'My Comments'),
+              Tab(text: 'Saved'),
             ],
+            indicatorColor: Colors.blue[800],
+            labelColor: Colors.blue[800],
+            unselectedLabelColor: Colors.grey,
           ),
-        ),
-      ],
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildPostsList(appState),
+                _buildCommentsList(appState),
+                _buildSavedPostsList(appState),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1629,13 +1686,13 @@ class _ProfileScreenState extends State<ProfileScreen>
           return Text('Error loading profile: ${snapshot.error}');
         }
         final userData = snapshot.data ?? {};
-        final displayName = userData['userName'] == null || userData['userName'].isEmpty
-            ? '@anonymous'
-            : '@${userData['userName']}';
+        final displayName =
+            userData['userName'] == null || userData['userName'].isEmpty
+                ? '@anonymous'
+                : '@${userData['userName']}';
         return Padding(
           padding: const EdgeInsets.all(16.0),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
                 decoration: BoxDecoration(
@@ -1659,13 +1716,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                 displayName,
                 style: TextStyle(fontSize: 20),
               ),
-              SizedBox(width: 16),
-             IconButton(
+              SizedBox(width: 8),
+              IconButton(
                 icon: Icon(
                   Icons.edit,
-                  size: 20.0, 
+                  size: 20.0,
                 ),
-                onPressed: () => _showEditOptions(context, appState, userData),
+                onPressed: () =>
+                    _showEditOptions(context, appState, userData),
               ),
             ],
           ),
@@ -1832,7 +1890,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       },
     );
   }
-
+ 
   bool _isValidUserName(String userName) {
     final RegExp validCharacters = RegExp(r'^[a-zA-Z0-9._]+$');
     return validCharacters.hasMatch(userName);
@@ -1869,6 +1927,8 @@ class _ProfileScreenState extends State<ProfileScreen>
               timestamp: post['timestamp']?.toDate() ?? DateTime.now(),
               postId: posts[index].id,
               userId: post['userId'] ?? '',
+              userName: post['userName'] ?? '',
+              profileEmoji: post['profileEmoji'] ?? '🙂',
             );
           },
         );
@@ -1936,7 +1996,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                   return SizedBox.shrink();
                 }
 
-                // Build and return the comment card here
                 return _buildCommentCard(context, appState, commentData,
                     postData, comments[index].id);
               },
@@ -1977,7 +2036,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                     child: Text(
                       postData['title'] ?? '',
                       style: TextStyle(
-                        fontWeight: FontWeight.bold,
                         fontSize: 16,
                       ),
                     ),
@@ -1992,68 +2050,58 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ],
               ),
               SizedBox(height: 8),
-              FutureBuilder<DocumentSnapshot>(
-                future: FirebaseFirestore.instance
-                    .collection('users')
-                    .doc(postData['userId'])
-                    .get(),
-                builder: (context, userSnapshot) {
-                  if (userSnapshot.connectionState == ConnectionState.waiting) {
-                    return Text('@loading...');
-                  }
-                  if (userSnapshot.hasError || !userSnapshot.hasData) {
-                    print('Error loading user data: ${userSnapshot.error}');
-                    return Text('@anonymous');
-                  }
-                  final userData =
-                      userSnapshot.data!.data() as Map<String, dynamic>?;
-                  final userName = userData?['userName'] as String?;
-                  return Text(
-                    '@${userName?.isNotEmpty == true ? userName : 'anonymous'}',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: Colors.grey[600],
-                    ),
-                  );
-                },
-              ),
-              SizedBox(height: 8),
-              Text(
-                commentData['content'] ?? '',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              SizedBox(height: 8),
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    children: [
-                      IconButton(
-                        icon: Icon(Icons.arrow_upward, size: 16),
-                        onPressed: () {
-                          appState.updateCommentPoints(commentId, 1);
-                        },
-                      ),
-                      Text('${commentData['points']}',
-                          style: TextStyle(fontSize: 14)),
-                      IconButton(
-                        icon: Icon(Icons.arrow_downward, size: 16),
-                        onPressed: () {
-                          appState.updateCommentPoints(commentId, -1);
-                        },
-                      ),
-                    ],
+                  FutureBuilder<DocumentSnapshot>(
+                    future: FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(postData['userId'])
+                        .get(),
+                    builder: (context, userSnapshot) {
+                      if (userSnapshot.connectionState ==
+                          ConnectionState.waiting) {
+                        return Text('@loading...');
+                      }
+                      if (userSnapshot.hasError || !userSnapshot.hasData) {
+                        print('Error loading user data: ${userSnapshot.error}');
+                        return Text('@anonymous');
+                      }
+                      final userData =
+                          userSnapshot.data!.data() as Map<String, dynamic>?;
+                      final userName = userData?['userName'] as String?;
+                      return Text(
+                        '@${userName?.isNotEmpty == true ? userName : 'anonymous'}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                        ),
+                      );
+                    },
                   ),
+                  SizedBox(width: 8),
                   Text(
                     getRelativeTime(commentData['timestamp'].toDate()),
                     style: TextStyle(
                       color: Colors.grey[600],
-                      fontSize: 12,
+                      fontSize: 14,
                     ),
                   ),
+                  SizedBox(width: 8),
+                  Icon(Icons.arrow_upward, size: 14, color: Colors.red),
+                  SizedBox(width: 4),
+                  Text(
+                    '${commentData['points']}',
+                    style: TextStyle(fontSize: 14),
+                  ),
                 ],
+              ),
+              SizedBox(height: 8),
+              Text(
+                commentData['content'] ?? '',
+                style: TextStyle(
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
@@ -2121,6 +2169,8 @@ class _ProfileScreenState extends State<ProfileScreen>
               timestamp: post['timestamp']?.toDate() ?? DateTime.now(),
               postId: savedPosts[index].id,
               userId: post['userId'] ?? '',
+              userName: post['userName'] ?? '',
+              profileEmoji: post['profileEmoji'] ?? '🙂',
             );
           },
         );
@@ -2129,17 +2179,154 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 }
 
+String getRelativeTime(DateTime dateTime) {
+  final now = DateTime.now();
+  final difference = now.difference(dateTime);
+
+  if (difference.inSeconds < 60) {
+    return 'Now';
+  } else if (difference.inMinutes < 60) {
+    return '${difference.inMinutes} min ago';
+  } else if (difference.inHours < 24) {
+    return '${difference.inHours} hr ago';
+  } else if (difference.inDays < 30) {
+    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'} ago';
+  } else if (difference.inDays < 365) {
+    final months = (difference.inDays / 30).floor();
+    return '$months month${months == 1 ? '' : 's'} ago';
+  } else {
+    final years = (difference.inDays / 365).floor();
+    return '$years year${years == 1 ? '' : 's'} ago';
+  }
+}
+
+=================================================================
+
+File: app/lib/scuttlebutt_app.dart
+
+// File: app/lib/scuttlebutt_app.dart
+
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'home_screen.dart';
+import 'messages_screen.dart';
+import 'profile_screen.dart';
+import 'settings_screen.dart';
+import 'app_state.dart';
+
+class ScuttlebuttApp extends StatelessWidget {
+  const ScuttlebuttApp({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return ChangeNotifierProvider(
+      create: (context) => AppState(),
+      child: MaterialApp(
+        theme: ThemeData(
+          useMaterial3: true,
+          colorSchemeSeed: Colors.blue[800],
+          appBarTheme: AppBarTheme(
+            backgroundColor: Colors.blue[800],
+            foregroundColor: Colors.white,
+          ),
+          bottomNavigationBarTheme: BottomNavigationBarThemeData(
+            selectedItemColor: Colors.blue[800],
+            unselectedItemColor: Colors.grey,
+          ),
+        ),
+        home: ScuttlebuttHomePage(),
+      ),
+    );
+  }
+}
+
+class ScuttlebuttHomePage extends StatefulWidget {
+  const ScuttlebuttHomePage({Key? key}) : super(key: key);
+
+  @override
+  _ScuttlebuttHomePageState createState() => _ScuttlebuttHomePageState();
+}
+
+class _ScuttlebuttHomePageState extends State<ScuttlebuttHomePage> {
+  int _selectedIndex = 0;
+
+  final List<Widget> _widgetOptions = <Widget>[
+    const HomeScreen(),
+    const MessagesScreen(),
+    const ProfileScreen(),
+    const SettingsScreen(),
+  ];
+
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: _widgetOptions.elementAt(_selectedIndex),
+      bottomNavigationBar: BottomNavigationBar(
+        items: const <BottomNavigationBarItem>[
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: 'Home',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.message),
+            label: 'Messages',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person),
+            label: 'You',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.settings),
+            label: 'Settings',
+          ),
+        ],
+        currentIndex: _selectedIndex,
+        selectedItemColor: Colors.blue[800],
+        unselectedItemColor: Colors.grey,
+        onTap: _onItemTapped,
+        type: BottomNavigationBarType.fixed,
+        showUnselectedLabels: true,
+      ),
+    );
+  }
+}
+
+=================================================================
+
+File: app/lib/settings_screen.dart
+
+// File: app/lib/settings_screen.dart
+
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
+import 'app_state.dart';
+import 'login_screen.dart';
+
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Settings'),
-      ),
-      body: ListView(
+    return SafeArea(
+      child: ListView(
         children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text(
+              'Settings',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
           _buildSectionHeader('App'),
           ListTile(
             leading: Icon(Icons.notifications),
@@ -2280,222 +2467,6 @@ class SettingsScreen extends StatelessWidget {
           ],
         );
       },
-    );
-  }
-}
-
-String getRelativeTime(DateTime dateTime) {
-  final now = DateTime.now();
-  final difference = now.difference(dateTime);
-
-  if (difference.inSeconds < 60) {
-    return 'Now';
-  } else if (difference.inMinutes < 60) {
-    return '${difference.inMinutes} min ago';
-  } else if (difference.inHours < 24) {
-    return '${difference.inHours} hr ago';
-  } else if (difference.inDays < 30) {
-    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'} ago';
-  } else if (difference.inDays < 365) {
-    final months = (difference.inDays / 30).floor();
-    return '$months month${months == 1 ? '' : 's'} ago';
-  } else {
-    final years = (difference.inDays / 365).floor();
-    return '$years year${years == 1 ? '' : 's'} ago';
-  }
-}
-
-=================================================================
-
-File: app/lib/scuttlebutt_app.dart
-
-// File: app/lib/scuttlebutt_app.dart
-
-import 'package:flutter/material.dart';
-import 'home_screen.dart';
-import 'messages_screen.dart';
-import 'profile_screen.dart';
-import 'post_screen.dart';
-
-class ScuttlebuttApp extends StatelessWidget {
-  const ScuttlebuttApp({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: Colors.blue[800],
-        appBarTheme: AppBarTheme(
-          backgroundColor: Colors.blue[800],
-          foregroundColor: Colors.white,
-        ),
-        bottomNavigationBarTheme: BottomNavigationBarThemeData(
-          selectedItemColor: Colors.blue[800],
-          unselectedItemColor: Colors.grey,
-        ),
-        floatingActionButtonTheme: FloatingActionButtonThemeData(
-          backgroundColor: Colors.blue[800],
-          foregroundColor: Colors.white,
-        ),
-      ),
-      home: ScuttlebuttHomePage(),
-    );
-  }
-}
-
-class ScuttlebuttHomePage extends StatefulWidget {
-  const ScuttlebuttHomePage({Key? key}) : super(key: key);
-
-  @override
-  _ScuttlebuttHomePageState createState() => _ScuttlebuttHomePageState();
-}
-
-class _ScuttlebuttHomePageState extends State<ScuttlebuttHomePage> {
-  int _selectedIndex = 0;
-  String _currentFeed = 'All DOD';
-
-  final List<Widget> _widgetOptions = <Widget>[
-    const HomeScreen(),
-    const MessagesScreen(),
-    const ProfileScreen(),
-  ];
-
-  final List<String> _titles = ['Home', 'Messages', 'Profile'];
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
-
-  void _changeFeed(String feed) {
-    setState(() {
-      _currentFeed = feed;
-    });
-    Navigator.pop(context); // Close the drawer
-  }
-
-  Widget _buildFeedOption(String title) {
-    return Column(
-      children: [
-        ListTile(
-          title: Text(
-            title,
-            style: TextStyle(
-              color: _currentFeed == title ? Colors.blue[800] : Colors.black,
-              fontWeight:
-                  _currentFeed == title ? FontWeight.bold : FontWeight.normal,
-            ),
-          ),
-          onTap: () => _changeFeed(title),
-        ),
-        Divider(height: 1, thickness: 1, color: Colors.grey[300]),
-      ],
-    );
-  }
-
-  String get _appBarTitle {
-    if (_selectedIndex == 0) {
-      return _currentFeed;
-    } else {
-      return 'Scuttlebutt';
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_appBarTitle),
-        actions: [
-          if (_selectedIndex == 2) // Show settings icon only on Profile screen
-            IconButton(
-              icon: Icon(Icons.settings),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => SettingsScreen()),
-                );
-              },
-            ),
-        ],
-      ),
-      drawer: _selectedIndex == 0
-          ? Drawer(
-              child: Column(
-                children: [
-                  SafeArea(
-                    child: Container(
-                      width: double.infinity,
-                      padding: EdgeInsets.only(
-                          left: 16, bottom: 8, right: 16, top: 32),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'Select',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          SizedBox(height: 8),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: ListView(
-                      padding: EdgeInsets.zero,
-                      children: [
-                        Divider(
-                            height: 1, thickness: 1, color: Colors.grey[300]),
-                        _buildFeedOption('All DOD'),
-                        _buildFeedOption('All Navy'),
-                        _buildFeedOption('My Command'),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            )
-          : null,
-      body: _widgetOptions.elementAt(_selectedIndex),
-      bottomNavigationBar: BottomNavigationBar(
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.message),
-            label: 'Messages',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Profile',
-          ),
-        ],
-        currentIndex: _selectedIndex,
-        selectedItemColor: Colors.blue[800],
-        onTap: _onItemTapped,
-        showUnselectedLabels: true,
-      ),
-      floatingActionButton: _selectedIndex == 0
-          ? FloatingActionButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => PostScreen(currentFeed: _currentFeed),
-                  ),
-                );
-              },
-              child: Icon(Icons.add),
-            )
-          : null,
     );
   }
 }

@@ -8,7 +8,6 @@ import 'app_state.dart';
 import 'login_screen.dart';
 import 'post_detail_screen.dart';
 import 'post_card.dart';
-import 'settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
@@ -36,31 +35,33 @@ class _ProfileScreenState extends State<ProfileScreen>
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
-    return Column(
-      children: [
-        _buildProfileHeader(appState),
-        TabBar(
-          controller: _tabController,
-          tabs: [
-            Tab(text: 'My Posts'),
-            Tab(text: 'My Comments'),
-            Tab(text: 'Saved'),
-          ],
-          indicatorColor: Colors.blue[800],
-          labelColor: Colors.blue[800],
-          unselectedLabelColor: Colors.grey,
-        ),
-        Expanded(
-          child: TabBarView(
+    return SafeArea(
+      child: Column(
+        children: [
+          _buildProfileHeader(appState),
+          TabBar(
             controller: _tabController,
-            children: [
-              _buildPostsList(appState),
-              _buildCommentsList(appState),
-              _buildSavedPostsList(appState),
+            tabs: [
+              Tab(text: 'My Posts'),
+              Tab(text: 'My Comments'),
+              Tab(text: 'Saved'),
             ],
+            indicatorColor: Colors.blue[800],
+            labelColor: Colors.blue[800],
+            unselectedLabelColor: Colors.grey,
           ),
-        ),
-      ],
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildPostsList(appState),
+                _buildCommentsList(appState),
+                _buildSavedPostsList(appState),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -76,13 +77,13 @@ class _ProfileScreenState extends State<ProfileScreen>
           return Text('Error loading profile: ${snapshot.error}');
         }
         final userData = snapshot.data ?? {};
-        final displayName = userData['userName'] == null || userData['userName'].isEmpty
-            ? '@anonymous'
-            : '@${userData['userName']}';
+        final displayName =
+            userData['userName'] == null || userData['userName'].isEmpty
+                ? '@anonymous'
+                : '@${userData['userName']}';
         return Padding(
           padding: const EdgeInsets.all(16.0),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
                 decoration: BoxDecoration(
@@ -106,13 +107,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                 displayName,
                 style: TextStyle(fontSize: 20),
               ),
-              SizedBox(width: 16),
-             IconButton(
+              SizedBox(width: 8),
+              IconButton(
                 icon: Icon(
                   Icons.edit,
-                  size: 20.0, 
+                  size: 20.0,
                 ),
-                onPressed: () => _showEditOptions(context, appState, userData),
+                onPressed: () =>
+                    _showEditOptions(context, appState, userData),
               ),
             ],
           ),

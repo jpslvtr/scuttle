@@ -2,4 +2,8 @@ My app Scuttlebutt is going to be an anonymous feed-based platform for service m
 
 When giving me code, please give me the full code for the file that the code lives in. Not just the code that needs editing; even the unchanged parts. I shouldn't see things like "implement functionality here..." or "methods remain the same..." Ensure that the code changes don’t break any existing functionality. If rules need to be updated, give me the complete revised set of rules.
 
-Does it seem like profile_screen.dart is too long? should there be a separate settings.dart?
+My ask:
+
+Right now there is a hamburger menu in the home that allows you to select "all dod, all navy, my command". I want to get rid of this hamburger menu. I want the selection to happen in the settings tab
+
+In the upper left hand corner I want there to be a placeholder integer. To be used for points for the user

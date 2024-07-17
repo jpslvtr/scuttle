@@ -11,12 +11,27 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Settings'),
-      ),
-      body: ListView(
+    final appState = Provider.of<AppState>(context);
+    return SafeArea(
+      child: ListView(
         children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text(
+              'Settings',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          _buildSectionHeader('Feed'),
+          ListTile(
+            title: Text('Current Feed'),
+            subtitle: Text(appState.currentFeed),
+            trailing: Icon(Icons.arrow_forward_ios),
+            onTap: () => _showFeedSelectionDialog(context, appState),
+          ),
           _buildSectionHeader('App'),
           ListTile(
             leading: Icon(Icons.notifications),
@@ -114,6 +129,40 @@ class SettingsScreen extends StatelessWidget {
           color: Colors.blue[800],
         ),
       ),
+    );
+  }
+
+  void _showFeedSelectionDialog(BuildContext context, AppState appState) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return SimpleDialog(
+          title: Text('Select Feed'),
+          children: <Widget>[
+            SimpleDialogOption(
+              onPressed: () {
+                appState.setCurrentFeed('All DOD');
+                Navigator.pop(context);
+              },
+              child: Text('All DOD'),
+            ),
+            SimpleDialogOption(
+              onPressed: () {
+                appState.setCurrentFeed('All Navy');
+                Navigator.pop(context);
+              },
+              child: Text('All Navy'),
+            ),
+            SimpleDialogOption(
+              onPressed: () {
+                appState.setCurrentFeed('My Command');
+                Navigator.pop(context);
+              },
+              child: Text('My Command'),
+            ),
+          ],
+        );
+      },
     );
   }
 

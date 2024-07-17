@@ -5,34 +5,82 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'app_state.dart';
 import 'post_card.dart';
+import 'post_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Column(
-        children: [
-          TabBar(
-            tabs: [
-              Tab(text: 'All Posts'),
-              Tab(text: 'My Command'),
-            ],
-            indicatorColor: Colors.blue[800],
-            labelColor: Colors.blue[800],
-            unselectedLabelColor: Colors.grey,
+    final appState = Provider.of<AppState>(context);
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Scuttlebutt'),
+        leading: Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Center(
+            child: Text(
+              '${appState.userPoints}',
+              style: TextStyle(
+                color: Colors.blue[800],
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
+            ),
           ),
-          Expanded(
-            child: TabBarView(
-              children: [
-                PostFeed(feedType: 'All DOD'),
-                PostFeed(feedType: 'My Command'),
-              ],
+        ),
+        actions: [
+          Container(
+            margin: EdgeInsets.only(right: 10),
+            child: ElevatedButton(
+              child: Icon(Icons.add, color: Colors.white),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue[800]?.withOpacity(0.8),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: EdgeInsets.all(8),
+                minimumSize: Size(40, 40),
+              ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        PostScreen(currentFeed: appState.currentFeed),
+                  ),
+                );
+              },
             ),
           ),
         ],
+      ),
+      body: SafeArea(
+        child: DefaultTabController(
+          length: 2,
+          child: Column(
+            children: [
+              TabBar(
+                tabs: [
+                  Tab(text: 'Top'),
+                  Tab(text: 'Recent'),
+                ],
+                indicatorColor: Colors.blue[800],
+                labelColor: Colors.blue[800],
+                unselectedLabelColor: Colors.grey,
+              ),
+              Expanded(
+                child: TabBarView(
+                  children: [
+                    PostFeed(feedType: appState.currentFeed),
+                    PostFeed(feedType: 'My Command'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -46,7 +94,8 @@ class PostFeed extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
-    final currentFeed = feedType == 'My Command' ? appState.command : 'All DOD';
+    final currentFeed =
+        feedType == 'My Command' ? appState.command : appState.currentFeed;
 
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
