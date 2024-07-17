@@ -27,6 +27,7 @@ class PostDetailScreen extends StatelessWidget {
                     .snapshots(),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
+                    print('Error in PostDetailScreen: ${snapshot.error}');
                     return Center(child: Text('Error: ${snapshot.error}'));
                   }
 
@@ -40,22 +41,84 @@ class PostDetailScreen extends StatelessWidget {
                   return ListView(
                     padding: EdgeInsets.all(16.0),
                     children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: FutureBuilder<DocumentSnapshot>(
+                              future: FirebaseFirestore.instance
+                                  .collection('users')
+                                  .doc(postData['userId'])
+                                  .get(),
+                              builder: (context, userSnapshot) {
+                                if (userSnapshot.connectionState ==
+                                    ConnectionState.waiting) {
+                                  return CircularProgressIndicator();
+                                }
+                                if (userSnapshot.hasError) {
+                                  print(
+                                      'Error loading user data: ${userSnapshot.error}');
+                                  return Text('🙂 @anonymous');
+                                }
+                                final userData = userSnapshot.data?.data()
+                                    as Map<String, dynamic>?;
+                                final userName =
+                                    userData?['userName'] as String?;
+                                final emoji =
+                                    userData?['profileEmoji'] as String?;
+                                return Row(
+                                  children: [
+                                    Text(emoji ?? '🙂'),
+                                    SizedBox(width: 4),
+                                    Text(
+                                      userName == null || userName.isEmpty
+                                          ? '@anonymous'
+                                          : '@$userName',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      getRelativeTime(
+                                          postData['timestamp'].toDate()),
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ),
+                          if (postData['userId'] ==
+                              Provider.of<AppState>(context).userId)
+                            IconButton(
+                              icon: Icon(Icons.delete, size: 20),
+                              onPressed: () => _showDeleteConfirmation(context),
+                              padding: EdgeInsets.zero,
+                              constraints: BoxConstraints(),
+                            ),
+                        ],
+                      ),
+                      SizedBox(height: 8),
                       Text(
                         postData['title'] ?? '',
                         style: TextStyle(
-                          fontSize: 24,
+                          fontSize: 18,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      SizedBox(height: 8.0),
+                      SizedBox(height: 4),
                       Text(postData['content'] ?? ''),
-                      SizedBox(height: 16.0),
+                      SizedBox(height: 16),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Row(
                             children: [
-                              Text('${postData['points']}'),
                               IconButton(
                                 icon: Icon(Icons.arrow_upward),
                                 onPressed: () {
@@ -63,6 +126,7 @@ class PostDetailScreen extends StatelessWidget {
                                       .updatePostPoints(postId, 1);
                                 },
                               ),
+                              Text('${postData['points']}'),
                               IconButton(
                                 icon: Icon(Icons.arrow_downward),
                                 onPressed: () {
@@ -70,16 +134,30 @@ class PostDetailScreen extends StatelessWidget {
                                       .updatePostPoints(postId, -1);
                                 },
                               ),
-                            ],
-                          ),
-                          Row(
-                            children: [
+                              SizedBox(width: 16),
                               Icon(Icons.comment),
                               SizedBox(width: 4),
                               Text('${postData['commentCount']}'),
                             ],
                           ),
-                          Text(getRelativeTime(postData['timestamp'].toDate())),
+                          IconButton(
+                            icon: Icon(
+                              Provider.of<AppState>(context)
+                                      .savedPosts
+                                      .contains(postId)
+                                  ? Icons.bookmark
+                                  : Icons.bookmark_border,
+                              color: Provider.of<AppState>(context)
+                                      .savedPosts
+                                      .contains(postId)
+                                  ? Colors.blue[800]
+                                  : null,
+                            ),
+                            onPressed: () {
+                              Provider.of<AppState>(context, listen: false)
+                                  .toggleSavedPost(postId);
+                            },
+                          ),
                         ],
                       ),
                       Divider(),
@@ -90,7 +168,7 @@ class PostDetailScreen extends StatelessWidget {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      SizedBox(height: 8.0),
+                      SizedBox(height: 8),
                       CommentList(postId: postId),
                     ],
                   );
@@ -101,6 +179,36 @@ class PostDetailScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  void _showDeleteConfirmation(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Delete Post'),
+          content: Text(
+              'Are you sure you want to delete this post? This action cannot be undone.'),
+          actions: <Widget>[
+            TextButton(
+              child: Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: Text('Delete', style: TextStyle(color: Colors.red)),
+              onPressed: () {
+                Provider.of<AppState>(context, listen: false)
+                    .deletePost(postId);
+                Navigator.of(context).pop();
+                Navigator.of(context).pop(); // Return to previous screen
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -121,13 +229,6 @@ class CommentList extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           print('Error in CommentList: ${snapshot.error}');
-          print('Error details:');
-          print(snapshot.error.toString());
-          if (snapshot.error is FirebaseException) {
-            FirebaseException e = snapshot.error as FirebaseException;
-            print('Firebase Exception Code: ${e.code}');
-            print('Firebase Exception Message: ${e.message}');
-          }
           return Center(child: Text('Error loading comments'));
         }
 
@@ -146,6 +247,7 @@ class CommentList extends StatelessWidget {
               timestamp: data['timestamp']?.toDate() ?? DateTime.now(),
               commentId: document.id,
               userId: data['userId'] ?? '',
+              postId: postId,
             );
           }).toList(),
         );
@@ -160,6 +262,7 @@ class CommentCard extends StatelessWidget {
   final DateTime timestamp;
   final String commentId;
   final String userId;
+  final String postId;
 
   const CommentCard({
     Key? key,
@@ -168,11 +271,13 @@ class CommentCard extends StatelessWidget {
     required this.timestamp,
     required this.commentId,
     required this.userId,
+    required this.postId,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final appState = Provider.of<AppState>(context, listen: false);
+    final appState = Provider.of<AppState>(context);
+    final currentVote = appState.userCommentVotes[commentId] ?? 0;
 
     return Card(
       margin: EdgeInsets.symmetric(vertical: 4.0),
@@ -181,34 +286,122 @@ class CommentCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                FutureBuilder<DocumentSnapshot>(
+                  future: FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(userId)
+                      .get(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return CircularProgressIndicator();
+                    }
+                    if (snapshot.hasError) {
+                      print('Error loading user data: ${snapshot.error}');
+                      return Text('🙂 @anonymous');
+                    }
+                    final userData =
+                        snapshot.data?.data() as Map<String, dynamic>?;
+                    final userName = userData?['userName'] as String?;
+                    final emoji = userData?['profileEmoji'] as String?;
+                    return Row(
+                      children: [
+                        Text(emoji ?? '🙂'),
+                        SizedBox(width: 4),
+                        Text(
+                          userName == null || userName.isEmpty
+                              ? '@anonymous'
+                              : '@$userName',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                if (userId == appState.userId)
+                  IconButton(
+                    icon: Icon(Icons.delete, size: 20),
+                    onPressed: () =>
+                        _showDeleteCommentConfirmation(context, appState),
+                    padding: EdgeInsets.zero,
+                    constraints: BoxConstraints(),
+                  ),
+              ],
+            ),
+            SizedBox(height: 4),
             Text(content),
-            SizedBox(height: 8.0),
+            SizedBox(height: 4),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Row(
                   children: [
-                    Text('$points'),
                     IconButton(
-                      icon: Icon(Icons.arrow_upward),
+                      icon: Icon(Icons.arrow_upward,
+                          size: 16,
+                          color: currentVote == 1 ? Colors.orange : null),
                       onPressed: () {
-                        appState.updateCommentPoints(commentId, 1);
+                        appState.updateCommentPoints(
+                            commentId, currentVote == 1 ? -1 : 1);
                       },
                     ),
+                    Text('$points', style: TextStyle(fontSize: 12)),
                     IconButton(
-                      icon: Icon(Icons.arrow_downward),
+                      icon: Icon(Icons.arrow_downward,
+                          size: 16,
+                          color: currentVote == -1 ? Colors.blue : null),
                       onPressed: () {
-                        appState.updateCommentPoints(commentId, -1);
+                        appState.updateCommentPoints(
+                            commentId, currentVote == -1 ? 1 : -1);
                       },
                     ),
                   ],
                 ),
-                Text(getRelativeTime(timestamp)),
+                Text(
+                  getRelativeTime(timestamp),
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 12,
+                  ),
+                ),
               ],
             ),
           ],
         ),
       ),
+    );
+  }
+
+  void _showDeleteCommentConfirmation(BuildContext context, AppState appState) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Delete Comment'),
+          content: Text(
+              'Are you sure you want to delete this comment? This action cannot be undone.'),
+          actions: <Widget>[
+            TextButton(
+              child: Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: Text('Delete', style: TextStyle(color: Colors.red)),
+              onPressed: () {
+                appState.deleteComment(postId, commentId);
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 }

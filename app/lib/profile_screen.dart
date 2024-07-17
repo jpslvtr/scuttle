@@ -6,6 +6,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'app_state.dart';
 import 'login_screen.dart';
+import 'post_detail_screen.dart';
+import 'post_card.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
@@ -39,8 +41,8 @@ class _ProfileScreenState extends State<ProfileScreen>
         TabBar(
           controller: _tabController,
           tabs: [
-            Tab(text: 'Posts'),
-            Tab(text: 'Comments'),
+            Tab(text: 'My Posts'),
+            Tab(text: 'My Comments'),
             Tab(text: 'Saved'),
           ],
           indicatorColor: Colors.blue[800],
@@ -101,7 +103,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               SizedBox(width: 16),
               Text(
                 displayName,
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                style: TextStyle(fontSize: 20),
               ),
               SizedBox(width: 16),
              IconButton(
@@ -221,8 +223,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                         errorText = null;
                       });
                     },
-                    maxLength:
-                        15,
+                    maxLength: 15,
                   ),
                   SizedBox(height: 16),
                   Text(
@@ -260,7 +261,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                         Navigator.of(context).pop();
                       } else {
                         setState(() {
-                          errorText = 'Username is already taken';
+                          errorText = 'Username is not available';
                         });
                       }
                     } else {
@@ -303,10 +304,14 @@ class _ProfileScreenState extends State<ProfileScreen>
           itemCount: posts.length,
           itemBuilder: (context, index) {
             final post = posts[index].data() as Map<String, dynamic>;
-            return ListTile(
-              title: Text(post['title'] ?? ''),
-              subtitle: Text(post['content'] ?? ''),
-              trailing: Text('${post['points']} points'),
+            return PostCard(
+              title: post['title'] ?? '',
+              content: post['content'] ?? '',
+              points: post['points'] ?? 0,
+              commentCount: post['commentCount'] ?? 0,
+              timestamp: post['timestamp']?.toDate() ?? DateTime.now(),
+              postId: posts[index].id,
+              userId: post['userId'] ?? '',
             );
           },
         );
@@ -335,30 +340,167 @@ class _ProfileScreenState extends State<ProfileScreen>
           itemCount: comments.length,
           itemBuilder: (context, index) {
             final comment = comments[index].data() as Map<String, dynamic>;
-            return ListTile(
-              title: Text(comment['content'] ?? ''),
-              subtitle: FutureBuilder<DocumentSnapshot>(
-                future: FirebaseFirestore.instance
-                    .collection('posts')
-                    .doc(comment['postId'])
-                    .get(),
-                builder: (context, postSnapshot) {
-                  if (postSnapshot.connectionState == ConnectionState.waiting) {
-                    return Text('Loading post...');
-                  }
-                  if (postSnapshot.hasError) {
-                    print(
-                        'Error loading post for comment: ${postSnapshot.error}');
-                    return Text('Error loading post: ${postSnapshot.error}');
-                  }
-                  final postData =
-                      postSnapshot.data!.data() as Map<String, dynamic>;
-                  return Text('On post: ${postData['title']}');
-                },
-              ),
-              trailing: Text('${comment['points']} points'),
+            return FutureBuilder<DocumentSnapshot>(
+              future: FirebaseFirestore.instance
+                  .collection('posts')
+                  .doc(comment['postId'])
+                  .get(),
+              builder: (context, postSnapshot) {
+                if (postSnapshot.connectionState == ConnectionState.waiting) {
+                  return Card(
+                    margin: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                    child: ListTile(title: Text('Loading...')),
+                  );
+                }
+                if (postSnapshot.hasError) {
+                  print(
+                      'Error loading post for comment: ${postSnapshot.error}');
+                  return Card(
+                    margin: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                    child: ListTile(title: Text('Error loading post')),
+                  );
+                }
+                final postData =
+                    postSnapshot.data!.data() as Map<String, dynamic>;
+                return Card(
+                  margin: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                  child: InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              PostDetailScreen(postId: comment['postId']),
+                        ),
+                      );
+                    },
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  postData['title'] ?? '',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                icon: Icon(Icons.delete, size: 20),
+                                onPressed: () => _showDeleteCommentConfirmation(
+                                    context, appState, comment['postId'], comments[index].id),
+                                padding: EdgeInsets.zero,
+                                constraints: BoxConstraints(),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 8),
+                          FutureBuilder<DocumentSnapshot>(
+                            future: FirebaseFirestore.instance
+                                .collection('users')
+                                .doc(postData['userId'])
+                                .get(),
+                            builder: (context, userSnapshot) {
+                              if (userSnapshot.connectionState ==
+                                  ConnectionState.waiting) {
+                                return Text('@loading...');
+                              }
+                              if (userSnapshot.hasError) {
+                                print(
+                                    'Error loading user data: ${userSnapshot.error}');
+                                return Text('@anonymous');
+                              }
+                              final userData = userSnapshot.data?.data()
+                                  as Map<String, dynamic>?;
+                              final userName = userData?['userName'] as String?;
+                              return Text(
+                                '@${userName?.isNotEmpty == true ? userName : 'anonymous'}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                  color: Colors.grey[600],
+                                ),
+                              );
+                            },
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            comment['content'] ?? '',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  IconButton(
+                                    icon: Icon(Icons.arrow_upward, size: 16),
+                                    onPressed: () {
+                                      appState.updateCommentPoints(comments[index].id, 1);
+                                    },
+                                  ),
+                                  Text('${comment['points']}',
+                                      style: TextStyle(fontSize: 14)),
+                                  IconButton(
+                                    icon: Icon(Icons.arrow_downward, size: 16),
+                                    onPressed: () {
+                                      appState.updateCommentPoints(comments[index].id, -1);
+                                    },
+                                  ),
+                                ],
+                              ),
+                              Text(
+                                getRelativeTime(comment['timestamp'].toDate()),
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
             );
           },
+        );
+      },
+    );
+  }
+
+  void _showDeleteCommentConfirmation(BuildContext context, AppState appState, String postId, String commentId) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Delete Comment'),
+          content: Text('Are you sure you want to delete this comment? This action cannot be undone.'),
+          actions: <Widget>[
+            TextButton(
+              child: Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: Text('Delete', style: TextStyle(color: Colors.red)),
+              onPressed: () {
+                appState.deleteComment(postId, commentId);
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
         );
       },
     );
@@ -381,10 +523,14 @@ class _ProfileScreenState extends State<ProfileScreen>
           itemCount: savedPosts.length,
           itemBuilder: (context, index) {
             final post = savedPosts[index].data() as Map<String, dynamic>;
-            return ListTile(
-              title: Text(post['title'] ?? ''),
-              subtitle: Text(post['content'] ?? ''),
-              trailing: Text('${post['points']} points'),
+            return PostCard(
+              title: post['title'] ?? '',
+              content: post['content'] ?? '',
+              points: post['points'] ?? 0,
+              commentCount: post['commentCount'] ?? 0,
+              timestamp: post['timestamp']?.toDate() ?? DateTime.now(),
+              postId: savedPosts[index].id,
+              userId: post['userId'] ?? '',
             );
           },
         );
@@ -545,5 +691,26 @@ class SettingsScreen extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+String getRelativeTime(DateTime dateTime) {
+  final now = DateTime.now();
+  final difference = now.difference(dateTime);
+
+  if (difference.inSeconds < 60) {
+    return 'Now';
+  } else if (difference.inMinutes < 60) {
+    return '${difference.inMinutes} min ago';
+  } else if (difference.inHours < 24) {
+    return '${difference.inHours} hr ago';
+  } else if (difference.inDays < 30) {
+    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'} ago';
+  } else if (difference.inDays < 365) {
+    final months = (difference.inDays / 30).floor();
+    return '$months month${months == 1 ? '' : 's'} ago';
+  } else {
+    final years = (difference.inDays / 365).floor();
+    return '$years year${years == 1 ? '' : 's'} ago';
   }
 }

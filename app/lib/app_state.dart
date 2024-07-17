@@ -8,7 +8,9 @@ class AppState extends ChangeNotifier {
   String? userId;
   String? command;
   String? userName;
-  Set<String> savedPosts = {};
+  List<String> savedPosts = [];
+  Map<String, int> userVotes = {};
+  Map<String, int> userCommentVotes = {};
 
   AppState({this.userId, this.command, this.userName});
 
@@ -21,9 +23,11 @@ class AppState extends ChangeNotifier {
         Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
         command = userData['command'] as String?;
         userName = userData['userName'] as String?;
-        savedPosts = Set<String>.from(userData['savedPosts'] ?? []);
+        savedPosts = List<String>.from(userData['savedPosts'] ?? []);
+        userVotes = Map<String, int>.from(userData['votes'] ?? {});
+        userCommentVotes =
+            Map<String, int>.from(userData['commentVotes'] ?? {});
       } else {
-        // Create a new user document if it doesn't exist
         await createUserDocument(uid);
       }
     } catch (e) {
@@ -37,9 +41,11 @@ class AppState extends ChangeNotifier {
       await FirebaseFirestore.instance.collection('users').doc(uid).set({
         'email': FirebaseAuth.instance.currentUser?.email,
         'createdAt': FieldValue.serverTimestamp(),
-        'profileEmoji': '🙂', // Default emoji
+        'profileEmoji': '🙂',
         'savedPosts': [],
-        'userName': '', // Set default username to empty string
+        'userName': '',
+        'votes': {},
+        'commentVotes': {},
       }, SetOptions(merge: true));
     } catch (e) {
       print('Error creating user document: $e');
@@ -51,11 +57,13 @@ class AppState extends ChangeNotifier {
     command = null;
     userName = null;
     savedPosts.clear();
+    userVotes.clear();
+    userCommentVotes.clear();
     notifyListeners();
   }
 
   Future<bool> isUserNameAvailable(String userName) async {
-    if (userName.isEmpty) return true; // Allow empty usernames
+    if (userName.isEmpty) return true;
     try {
       QuerySnapshot query = await FirebaseFirestore.instance
           .collection('users')
@@ -88,11 +96,39 @@ class AppState extends ChangeNotifier {
   Future<void> updatePostPoints(String postId, int delta) async {
     if (userId == null) return;
 
-    await FirebaseFirestore.instance.collection('posts').doc(postId).update({
-      'points': FieldValue.increment(delta),
-    });
+    try {
+      DocumentReference postRef =
+          FirebaseFirestore.instance.collection('posts').doc(postId);
 
-    notifyListeners();
+      int currentVote = userVotes[postId] ?? 0;
+      int newVote = currentVote + delta;
+
+      if (newVote.abs() > 1) {
+        print('Cannot vote more than once in each direction');
+        return;
+      }
+
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        DocumentSnapshot freshPost = await transaction.get(postRef);
+        if (!freshPost.exists) {
+          throw Exception('Post does not exist!');
+        }
+
+        int oldPoints = freshPost.get('points') as int;
+        int newPoints = oldPoints + delta;
+
+        transaction.update(postRef, {'points': newPoints});
+
+        DocumentReference userRef =
+            FirebaseFirestore.instance.collection('users').doc(userId);
+        transaction.update(userRef, {'votes.$postId': newVote});
+      });
+
+      userVotes[postId] = newVote;
+      notifyListeners();
+    } catch (e) {
+      print('Error updating post points: $e');
+    }
   }
 
   Future<void> createComment(String postId, String content) async {
@@ -117,14 +153,39 @@ class AppState extends ChangeNotifier {
   Future<void> updateCommentPoints(String commentId, int delta) async {
     if (userId == null) return;
 
-    await FirebaseFirestore.instance
-        .collection('comments')
-        .doc(commentId)
-        .update({
-      'points': FieldValue.increment(delta),
-    });
+    try {
+      DocumentReference commentRef =
+          FirebaseFirestore.instance.collection('comments').doc(commentId);
 
-    notifyListeners();
+      int currentVote = userCommentVotes[commentId] ?? 0;
+      int newVote = currentVote + delta;
+
+      if (newVote.abs() > 1) {
+        print('Cannot vote more than once in each direction');
+        return;
+      }
+
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        DocumentSnapshot freshComment = await transaction.get(commentRef);
+        if (!freshComment.exists) {
+          throw Exception('Comment does not exist!');
+        }
+
+        int oldPoints = freshComment.get('points') as int;
+        int newPoints = oldPoints + delta;
+
+        transaction.update(commentRef, {'points': newPoints});
+
+        DocumentReference userRef =
+            FirebaseFirestore.instance.collection('users').doc(userId);
+        transaction.update(userRef, {'commentVotes.$commentId': newVote});
+      });
+
+      userCommentVotes[commentId] = newVote;
+      notifyListeners();
+    } catch (e) {
+      print('Error updating comment points: $e');
+    }
   }
 
   Future<void> deleteAccount() async {
@@ -245,6 +306,25 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<void> deleteComment(String postId, String commentId) async {
+    if (userId == null) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('comments')
+          .doc(commentId)
+          .delete();
+
+      await FirebaseFirestore.instance.collection('posts').doc(postId).update({
+        'commentCount': FieldValue.increment(-1),
+      });
+
+      notifyListeners();
+    } catch (e) {
+      print('Error deleting comment: $e');
+    }
+  }
+
   Future<void> updateProfileEmoji(String emoji) async {
     if (userId == null) return;
 
@@ -263,16 +343,29 @@ class AppState extends ChangeNotifier {
     if (userId == null) return;
 
     try {
+      DocumentSnapshot postDoc = await FirebaseFirestore.instance
+          .collection('posts')
+          .doc(postId)
+          .get();
+
+      if (postDoc.exists) {
+        Map<String, dynamic> postData = postDoc.data() as Map<String, dynamic>;
+        if (postData['userId'] == userId) {
+          print('Cannot save your own post');
+          return;
+        }
+      }
+
       if (savedPosts.contains(postId)) {
         savedPosts.remove(postId);
       } else {
-        savedPosts.add(postId);
+        savedPosts.insert(0, postId);
       }
 
       await FirebaseFirestore.instance
           .collection('users')
           .doc(userId)
-          .update({'savedPosts': savedPosts.toList()});
+          .update({'savedPosts': savedPosts});
 
       notifyListeners();
     } catch (e) {

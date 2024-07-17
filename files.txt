@@ -1,5 +1,7 @@
 File: app/lib/app_state.dart
 
+// File: app/lib/app_state.dart
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -8,7 +10,8 @@ class AppState extends ChangeNotifier {
   String? userId;
   String? command;
   String? userName;
-  Set<String> savedPosts = {};
+  List<String> savedPosts = [];
+  Map<String, int> userVotes = {};
 
   AppState({this.userId, this.command, this.userName});
 
@@ -21,9 +24,9 @@ class AppState extends ChangeNotifier {
         Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
         command = userData['command'] as String?;
         userName = userData['userName'] as String?;
-        savedPosts = Set<String>.from(userData['savedPosts'] ?? []);
+        savedPosts = List<String>.from(userData['savedPosts'] ?? []);
+        userVotes = Map<String, int>.from(userData['votes'] ?? {});
       } else {
-        // Create a new user document if it doesn't exist
         await createUserDocument(uid);
       }
     } catch (e) {
@@ -37,34 +40,14 @@ class AppState extends ChangeNotifier {
       await FirebaseFirestore.instance.collection('users').doc(uid).set({
         'email': FirebaseAuth.instance.currentUser?.email,
         'createdAt': FieldValue.serverTimestamp(),
-        'profileEmoji': '🙂', // Default emoji
+        'profileEmoji': '🙂',
         'savedPosts': [],
+        'userName': '',
+        'votes': {},
       }, SetOptions(merge: true));
     } catch (e) {
       print('Error creating user document: $e');
     }
-  }
-
-  Future<bool> createUserWithUserName(User user, String userName) async {
-    if (await isUserNameAvailable(userName)) {
-      try {
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-          'email': user.email,
-          'userName': userName,
-          'createdAt': FieldValue.serverTimestamp(),
-          'profileEmoji': '🙂', // Default emoji
-          'savedPosts': [],
-        }, SetOptions(merge: true));
-        this.userName = userName;
-        this.userId = user.uid;
-        notifyListeners();
-        return true;
-      } catch (e) {
-        print('Error creating user with username: $e');
-        return false;
-      }
-    }
-    return false;
   }
 
   void clearUserData() {
@@ -72,10 +55,12 @@ class AppState extends ChangeNotifier {
     command = null;
     userName = null;
     savedPosts.clear();
+    userVotes.clear();
     notifyListeners();
   }
 
   Future<bool> isUserNameAvailable(String userName) async {
+    if (userName.isEmpty) return true;
     try {
       QuerySnapshot query = await FirebaseFirestore.instance
           .collection('users')
@@ -108,11 +93,39 @@ class AppState extends ChangeNotifier {
   Future<void> updatePostPoints(String postId, int delta) async {
     if (userId == null) return;
 
-    await FirebaseFirestore.instance.collection('posts').doc(postId).update({
-      'points': FieldValue.increment(delta),
-    });
+    try {
+      DocumentReference postRef =
+          FirebaseFirestore.instance.collection('posts').doc(postId);
 
-    notifyListeners();
+      int currentVote = userVotes[postId] ?? 0;
+      int newVote = currentVote + delta;
+
+      if (newVote.abs() > 1) {
+        print('Cannot vote more than once in each direction');
+        return;
+      }
+
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        DocumentSnapshot freshPost = await transaction.get(postRef);
+        if (!freshPost.exists) {
+          throw Exception('Post does not exist!');
+        }
+
+        int oldPoints = freshPost.get('points') as int;
+        int newPoints = oldPoints + delta;
+
+        transaction.update(postRef, {'points': newPoints});
+
+        DocumentReference userRef =
+            FirebaseFirestore.instance.collection('users').doc(userId);
+        transaction.update(userRef, {'votes.$postId': newVote});
+      });
+
+      userVotes[postId] = newVote;
+      notifyListeners();
+    } catch (e) {
+      print('Error updating post points: $e');
+    }
   }
 
   Future<void> createComment(String postId, String content) async {
@@ -197,6 +210,22 @@ class AppState extends ChangeNotifier {
     if (userId == null) return;
 
     try {
+      if (data.containsKey('userName')) {
+        String newUserName = data['userName'] as String;
+        if (newUserName.toLowerCase() == 'anonymous') {
+          print('Error: Username "anonymous" is not allowed');
+          return;
+        }
+        if (newUserName.length > 15) {
+          print('Error: Username must be 15 characters or less');
+          return;
+        }
+        if (!(await isUserNameAvailable(newUserName))) {
+          print('Error: Username is not available');
+          return;
+        }
+      }
+
       await FirebaseFirestore.instance
           .collection('users')
           .doc(userId)
@@ -267,16 +296,29 @@ class AppState extends ChangeNotifier {
     if (userId == null) return;
 
     try {
+      DocumentSnapshot postDoc = await FirebaseFirestore.instance
+          .collection('posts')
+          .doc(postId)
+          .get();
+
+      if (postDoc.exists) {
+        Map<String, dynamic> postData = postDoc.data() as Map<String, dynamic>;
+        if (postData['userId'] == userId) {
+          print('Cannot save your own post');
+          return;
+        }
+      }
+
       if (savedPosts.contains(postId)) {
         savedPosts.remove(postId);
       } else {
-        savedPosts.add(postId);
+        savedPosts.insert(0, postId);
       }
 
       await FirebaseFirestore.instance
           .collection('users')
           .doc(userId)
-          .update({'savedPosts': savedPosts.toList()});
+          .update({'savedPosts': savedPosts});
 
       notifyListeners();
     } catch (e) {
@@ -316,7 +358,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'app_state.dart';
-import 'post_detail_screen.dart';
+import 'post_card.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -329,8 +371,8 @@ class HomeScreen extends StatelessWidget {
         children: [
           TabBar(
             tabs: [
-              Tab(text: 'Main Feed'),
-              Tab(text: 'New Posts'),
+              Tab(text: 'All Posts'),
+              Tab(text: 'My Command'),
             ],
             indicatorColor: Colors.blue[800],
             labelColor: Colors.blue[800],
@@ -339,8 +381,8 @@ class HomeScreen extends StatelessWidget {
           Expanded(
             child: TabBarView(
               children: [
-                PostFeed(sortBy: 'points'),
-                PostFeed(sortBy: 'timestamp'),
+                PostFeed(feedType: 'All DOD'),
+                PostFeed(feedType: 'My Command'),
               ],
             ),
           ),
@@ -351,18 +393,20 @@ class HomeScreen extends StatelessWidget {
 }
 
 class PostFeed extends StatelessWidget {
-  final String sortBy;
+  final String feedType;
 
-  const PostFeed({Key? key, required this.sortBy}) : super(key: key);
+  const PostFeed({Key? key, required this.feedType}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final currentFeed = Provider.of<AppState>(context).command ?? 'All DOD';
+    final appState = Provider.of<AppState>(context);
+    final currentFeed = feedType == 'My Command' ? appState.command : 'All DOD';
+
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('posts')
           .where('feed', isEqualTo: currentFeed)
-          .orderBy(sortBy, descending: true)
+          .orderBy('timestamp', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
@@ -397,162 +441,6 @@ class PostFeed extends StatelessWidget {
         );
       },
     );
-  }
-}
-
-class PostCard extends StatelessWidget {
-  final String title;
-  final String content;
-  final int points;
-  final int commentCount;
-  final DateTime timestamp;
-  final String postId;
-  final String userId;
-
-  const PostCard({
-    Key? key,
-    required this.title,
-    required this.content,
-    required this.points,
-    required this.commentCount,
-    required this.timestamp,
-    required this.postId,
-    required this.userId,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    final appState = Provider.of<AppState>(context);
-    final isCreator = appState.userId == userId;
-    final isSaved = appState.savedPosts.contains(postId);
-
-    return Card(
-      margin: EdgeInsets.all(8.0),
-      child: InkWell(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => PostDetailScreen(postId: postId),
-            ),
-          );
-        },
-        child: Padding(
-          padding: EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  if (isCreator)
-                    IconButton(
-                      icon: Icon(Icons.delete),
-                      onPressed: () => _showDeleteConfirmation(context),
-                    ),
-                ],
-              ),
-              SizedBox(height: 8.0),
-              Text(content),
-              SizedBox(height: 8.0),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      IconButton(
-                        icon: Icon(Icons.arrow_upward),
-                        onPressed: () {
-                          appState.updatePostPoints(postId, 1);
-                        },
-                      ),
-                      Text('$points'),
-                      IconButton(
-                        icon: Icon(Icons.arrow_downward),
-                        onPressed: () {
-                          appState.updatePostPoints(postId, -1);
-                        },
-                      ),
-                      SizedBox(width: 16),
-                      Icon(Icons.comment),
-                      SizedBox(width: 4),
-                      Text('$commentCount'),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      IconButton(
-                        icon: Icon(
-                          isSaved ? Icons.bookmark : Icons.bookmark_border,
-                          color: isSaved ? Colors.blue[800] : null,
-                        ),
-                        onPressed: () {
-                          appState.toggleSavedPost(postId);
-                        },
-                      ),
-                      Text(getRelativeTime(timestamp)),
-                    ],
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showDeleteConfirmation(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Delete Post'),
-          content: Text(
-              'Are you sure you want to delete this post? This action cannot be undone.'),
-          actions: <Widget>[
-            TextButton(
-              child: Text('Cancel'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-            TextButton(
-              child: Text('Delete', style: TextStyle(color: Colors.red)),
-              onPressed: () {
-                Provider.of<AppState>(context, listen: false)
-                    .deletePost(postId);
-                Navigator.of(context).pop();
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-String getRelativeTime(DateTime dateTime) {
-  final now = DateTime.now();
-  final difference = now.difference(dateTime);
-
-  if (difference.inSeconds < 60) {
-    return 'Now';
-  } else if (difference.inMinutes < 60) {
-    return '${difference.inMinutes} min ago';
-  } else if (difference.inHours < 24) {
-    return '${difference.inHours} hr ago';
-  } else {
-    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'} ago';
   }
 }
 
@@ -752,6 +640,230 @@ class MessagesScreen extends StatelessWidget {
 
 =================================================================
 
+File: app/lib/post_card.dart
+
+// File: app/lib/post_card.dart
+
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
+import 'app_state.dart';
+import 'post_detail_screen.dart';
+
+class PostCard extends StatelessWidget {
+  final String title;
+  final String content;
+  final int points;
+  final int commentCount;
+  final DateTime timestamp;
+  final String postId;
+  final String userId;
+  final bool isDetailView;
+
+  const PostCard({
+    Key? key,
+    required this.title,
+    required this.content,
+    required this.points,
+    required this.commentCount,
+    required this.timestamp,
+    required this.postId,
+    required this.userId,
+    this.isDetailView = false,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final appState = Provider.of<AppState>(context);
+    final isCreator = appState.userId == userId;
+    final isSaved = appState.savedPosts.contains(postId);
+
+    return Card(
+      margin: EdgeInsets.all(8.0),
+      child: InkWell(
+        onTap: isDetailView
+            ? null
+            : () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => PostDetailScreen(postId: postId),
+                  ),
+                );
+              },
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: FutureBuilder<DocumentSnapshot>(
+                      future: FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(userId)
+                          .get(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return CircularProgressIndicator();
+                        }
+                        if (snapshot.hasError) {
+                          print('Error loading user data: ${snapshot.error}');
+                          return Text('🙂 @anonymous');
+                        }
+                        final userData =
+                            snapshot.data?.data() as Map<String, dynamic>?;
+                        final userName = userData?['userName'] as String?;
+                        final emoji = userData?['profileEmoji'] as String?;
+                        return Row(
+                          children: [
+                            Text(emoji ?? '🙂'),
+                            SizedBox(width: 4),
+                            Text(
+                              userName == null || userName.isEmpty
+                                  ? '@anonymous'
+                                  : '@$userName',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              getRelativeTime(timestamp),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                  if (isCreator && !isDetailView)
+                    IconButton(
+                      icon: Icon(Icons.delete, size: 20),
+                      onPressed: () => _showDeleteConfirmation(context),
+                      padding: EdgeInsets.zero,
+                      constraints: BoxConstraints(),
+                      alignment: Alignment.centerRight,
+                    ),
+                ],
+              ),
+              SizedBox(height: 8),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              SizedBox(height: 4),
+              Text(
+                content,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+              SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.arrow_upward),
+                        onPressed: () {
+                          appState.updatePostPoints(postId, 1);
+                        },
+                      ),
+                      Text('$points'),
+                      IconButton(
+                        icon: Icon(Icons.arrow_downward),
+                        onPressed: () {
+                          appState.updatePostPoints(postId, -1);
+                        },
+                      ),
+                      SizedBox(width: 16),
+                      Icon(Icons.comment),
+                      SizedBox(width: 4),
+                      Text('$commentCount'),
+                    ],
+                  ),
+                  IconButton(
+                    icon: Icon(
+                      isSaved ? Icons.bookmark : Icons.bookmark_border,
+                      color: isSaved ? Colors.blue[800] : null,
+                    ),
+                    onPressed: () {
+                      appState.toggleSavedPost(postId);
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showDeleteConfirmation(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Delete Post'),
+          content: Text(
+              'Are you sure you want to delete this post? This action cannot be undone.'),
+          actions: <Widget>[
+            TextButton(
+              child: Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: Text('Delete', style: TextStyle(color: Colors.red)),
+              onPressed: () {
+                Provider.of<AppState>(context, listen: false)
+                    .deletePost(postId);
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+String getRelativeTime(DateTime dateTime) {
+  final now = DateTime.now();
+  final difference = now.difference(dateTime);
+
+  if (difference.inSeconds < 60) {
+    return 'Now';
+  } else if (difference.inMinutes < 60) {
+    return '${difference.inMinutes} min ago';
+  } else if (difference.inHours < 24) {
+    return '${difference.inHours} hr ago';
+  } else if (difference.inDays < 30) {
+    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'} ago';
+  } else if (difference.inDays < 365) {
+    final months = (difference.inDays / 30).floor();
+    return '$months month${months == 1 ? '' : 's'} ago';
+  } else {
+    final years = (difference.inDays / 365).floor();
+    return '$years year${years == 1 ? '' : 's'} ago';
+  }
+}
+
+=================================================================
+
 File: app/lib/post_detail_screen.dart
 
 // File: app/lib/post_detail_screen.dart
@@ -783,6 +895,7 @@ class PostDetailScreen extends StatelessWidget {
                     .snapshots(),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
+                    print('Error in PostDetailScreen: ${snapshot.error}');
                     return Center(child: Text('Error: ${snapshot.error}'));
                   }
 
@@ -796,22 +909,84 @@ class PostDetailScreen extends StatelessWidget {
                   return ListView(
                     padding: EdgeInsets.all(16.0),
                     children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: FutureBuilder<DocumentSnapshot>(
+                              future: FirebaseFirestore.instance
+                                  .collection('users')
+                                  .doc(postData['userId'])
+                                  .get(),
+                              builder: (context, userSnapshot) {
+                                if (userSnapshot.connectionState ==
+                                    ConnectionState.waiting) {
+                                  return CircularProgressIndicator();
+                                }
+                                if (userSnapshot.hasError) {
+                                  print(
+                                      'Error loading user data: ${userSnapshot.error}');
+                                  return Text('🙂 @anonymous');
+                                }
+                                final userData = userSnapshot.data?.data()
+                                    as Map<String, dynamic>?;
+                                final userName =
+                                    userData?['userName'] as String?;
+                                final emoji =
+                                    userData?['profileEmoji'] as String?;
+                                return Row(
+                                  children: [
+                                    Text(emoji ?? '🙂'),
+                                    SizedBox(width: 4),
+                                    Text(
+                                      userName == null || userName.isEmpty
+                                          ? '@anonymous'
+                                          : '@$userName',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      getRelativeTime(
+                                          postData['timestamp'].toDate()),
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ),
+                          if (postData['userId'] ==
+                              Provider.of<AppState>(context).userId)
+                            IconButton(
+                              icon: Icon(Icons.delete, size: 20),
+                              onPressed: () => _showDeleteConfirmation(context),
+                              padding: EdgeInsets.zero,
+                              constraints: BoxConstraints(),
+                            ),
+                        ],
+                      ),
+                      SizedBox(height: 8),
                       Text(
                         postData['title'] ?? '',
                         style: TextStyle(
-                          fontSize: 24,
+                          fontSize: 18,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      SizedBox(height: 8.0),
+                      SizedBox(height: 4),
                       Text(postData['content'] ?? ''),
-                      SizedBox(height: 16.0),
+                      SizedBox(height: 16),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Row(
                             children: [
-                              Text('${postData['points']}'),
                               IconButton(
                                 icon: Icon(Icons.arrow_upward),
                                 onPressed: () {
@@ -819,6 +994,7 @@ class PostDetailScreen extends StatelessWidget {
                                       .updatePostPoints(postId, 1);
                                 },
                               ),
+                              Text('${postData['points']}'),
                               IconButton(
                                 icon: Icon(Icons.arrow_downward),
                                 onPressed: () {
@@ -826,16 +1002,30 @@ class PostDetailScreen extends StatelessWidget {
                                       .updatePostPoints(postId, -1);
                                 },
                               ),
-                            ],
-                          ),
-                          Row(
-                            children: [
+                              SizedBox(width: 16),
                               Icon(Icons.comment),
                               SizedBox(width: 4),
                               Text('${postData['commentCount']}'),
                             ],
                           ),
-                          Text(getRelativeTime(postData['timestamp'].toDate())),
+                          IconButton(
+                            icon: Icon(
+                              Provider.of<AppState>(context)
+                                      .savedPosts
+                                      .contains(postId)
+                                  ? Icons.bookmark
+                                  : Icons.bookmark_border,
+                              color: Provider.of<AppState>(context)
+                                      .savedPosts
+                                      .contains(postId)
+                                  ? Colors.blue[800]
+                                  : null,
+                            ),
+                            onPressed: () {
+                              Provider.of<AppState>(context, listen: false)
+                                  .toggleSavedPost(postId);
+                            },
+                          ),
                         ],
                       ),
                       Divider(),
@@ -846,7 +1036,7 @@ class PostDetailScreen extends StatelessWidget {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      SizedBox(height: 8.0),
+                      SizedBox(height: 8),
                       CommentList(postId: postId),
                     ],
                   );
@@ -857,6 +1047,36 @@ class PostDetailScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  void _showDeleteConfirmation(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Delete Post'),
+          content: Text(
+              'Are you sure you want to delete this post? This action cannot be undone.'),
+          actions: <Widget>[
+            TextButton(
+              child: Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: Text('Delete', style: TextStyle(color: Colors.red)),
+              onPressed: () {
+                Provider.of<AppState>(context, listen: false)
+                    .deletePost(postId);
+                Navigator.of(context).pop();
+                Navigator.of(context).pop(); // Return to previous screen
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -877,13 +1097,6 @@ class CommentList extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           print('Error in CommentList: ${snapshot.error}');
-          print('Error details:');
-          print(snapshot.error.toString());
-          if (snapshot.error is FirebaseException) {
-            FirebaseException e = snapshot.error as FirebaseException;
-            print('Firebase Exception Code: ${e.code}');
-            print('Firebase Exception Message: ${e.message}');
-          }
           return Center(child: Text('Error loading comments'));
         }
 
@@ -937,29 +1150,70 @@ class CommentCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            FutureBuilder<DocumentSnapshot>(
+              future: FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(userId)
+                  .get(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return CircularProgressIndicator();
+                }
+                if (snapshot.hasError) {
+                  print('Error loading user data: ${snapshot.error}');
+                  return Text('🙂 @anonymous');
+                }
+                final userData = snapshot.data?.data() as Map<String, dynamic>?;
+                final userName = userData?['userName'] as String?;
+                final emoji = userData?['profileEmoji'] as String?;
+                return Row(
+                  children: [
+                    Text(emoji ?? '🙂'),
+                    SizedBox(width: 4),
+                    Text(
+                      userName == null || userName.isEmpty
+                          ? '@anonymous'
+                          : '@$userName',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      getRelativeTime(timestamp),
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+            SizedBox(height: 4),
             Text(content),
-            SizedBox(height: 8.0),
+            SizedBox(height: 4),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Row(
                   children: [
-                    Text('$points'),
                     IconButton(
-                      icon: Icon(Icons.arrow_upward),
+                      icon: Icon(Icons.arrow_upward, size: 16),
                       onPressed: () {
                         appState.updateCommentPoints(commentId, 1);
                       },
                     ),
+                    Text('$points', style: TextStyle(fontSize: 12)),
                     IconButton(
-                      icon: Icon(Icons.arrow_downward),
+                      icon: Icon(Icons.arrow_downward, size: 16),
                       onPressed: () {
                         appState.updateCommentPoints(commentId, -1);
                       },
                     ),
                   ],
                 ),
-                Text(getRelativeTime(timestamp)),
               ],
             ),
           ],
@@ -1152,6 +1406,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'app_state.dart';
 import 'login_screen.dart';
+import 'post_detail_screen.dart';
+import 'post_card.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
@@ -1185,8 +1441,8 @@ class _ProfileScreenState extends State<ProfileScreen>
         TabBar(
           controller: _tabController,
           tabs: [
-            Tab(text: 'Posts'),
-            Tab(text: 'Comments'),
+            Tab(text: 'My Posts'),
+            Tab(text: 'My Comments'),
             Tab(text: 'Saved'),
           ],
           indicatorColor: Colors.blue[800],
@@ -1219,6 +1475,9 @@ class _ProfileScreenState extends State<ProfileScreen>
           return Text('Error loading profile: ${snapshot.error}');
         }
         final userData = snapshot.data ?? {};
+        final displayName = userData['userName'] == null || userData['userName'].isEmpty
+            ? '@anonymous'
+            : '@${userData['userName']}';
         return Padding(
           padding: const EdgeInsets.all(16.0),
           child: Row(
@@ -1243,12 +1502,15 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
               SizedBox(width: 16),
               Text(
-                userData['userName'] ?? 'Set Username',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                displayName,
+                style: TextStyle(fontSize: 20),
               ),
               SizedBox(width: 16),
-              IconButton(
-                icon: Icon(Icons.edit, color: Colors.blue[800]),
+             IconButton(
+                icon: Icon(
+                  Icons.edit,
+                  size: 20.0, 
+                ),
                 onPressed: () => _showEditOptions(context, appState, userData),
               ),
             ],
@@ -1361,10 +1623,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                         errorText = null;
                       });
                     },
+                    maxLength: 15,
                   ),
                   SizedBox(height: 16),
                   Text(
-                    'Letters, numbers, periods, and underscores.',
+                    'Letters, numbers, periods, and underscores. Leave empty for anonymous.',
                     style: TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                 ],
@@ -1380,7 +1643,16 @@ class _ProfileScreenState extends State<ProfileScreen>
                   child: Text('Save'),
                   onPressed: () async {
                     final newUsername = controller.text.trim();
-                    if (_isValidUserName(newUsername)) {
+                    if (newUsername.toLowerCase() == 'anonymous') {
+                      setState(() {
+                        errorText = 'Username "anonymous" is not allowed';
+                      });
+                    } else if (newUsername.length > 15) {
+                      setState(() {
+                        errorText = 'Username must be 15 characters or less';
+                      });
+                    } else if (_isValidUserName(newUsername) ||
+                        newUsername.isEmpty) {
                       final isAvailable =
                           await appState.isUserNameAvailable(newUsername);
                       if (isAvailable || newUsername == currentUsername) {
@@ -1432,10 +1704,14 @@ class _ProfileScreenState extends State<ProfileScreen>
           itemCount: posts.length,
           itemBuilder: (context, index) {
             final post = posts[index].data() as Map<String, dynamic>;
-            return ListTile(
-              title: Text(post['title'] ?? ''),
-              subtitle: Text(post['content'] ?? ''),
-              trailing: Text('${post['points']} points'),
+            return PostCard(
+              title: post['title'] ?? '',
+              content: post['content'] ?? '',
+              points: post['points'] ?? 0,
+              commentCount: post['commentCount'] ?? 0,
+              timestamp: post['timestamp']?.toDate() ?? DateTime.now(),
+              postId: posts[index].id,
+              userId: post['userId'] ?? '',
             );
           },
         );
@@ -1464,28 +1740,111 @@ class _ProfileScreenState extends State<ProfileScreen>
           itemCount: comments.length,
           itemBuilder: (context, index) {
             final comment = comments[index].data() as Map<String, dynamic>;
-            return ListTile(
-              title: Text(comment['content'] ?? ''),
-              subtitle: FutureBuilder<DocumentSnapshot>(
-                future: FirebaseFirestore.instance
-                    .collection('posts')
-                    .doc(comment['postId'])
-                    .get(),
-                builder: (context, postSnapshot) {
-                  if (postSnapshot.connectionState == ConnectionState.waiting) {
-                    return Text('Loading post...');
-                  }
-                  if (postSnapshot.hasError) {
-                    print(
-                        'Error loading post for comment: ${postSnapshot.error}');
-                    return Text('Error loading post: ${postSnapshot.error}');
-                  }
-                  final postData =
-                      postSnapshot.data!.data() as Map<String, dynamic>;
-                  return Text('On post: ${postData['title']}');
-                },
-              ),
-              trailing: Text('${comment['points']} points'),
+            return FutureBuilder<DocumentSnapshot>(
+              future: FirebaseFirestore.instance
+                  .collection('posts')
+                  .doc(comment['postId'])
+                  .get(),
+              builder: (context, postSnapshot) {
+                if (postSnapshot.connectionState == ConnectionState.waiting) {
+                  return Card(
+                    margin: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                    child: ListTile(title: Text('Loading...')),
+                  );
+                }
+                if (postSnapshot.hasError) {
+                  print(
+                      'Error loading post for comment: ${postSnapshot.error}');
+                  return Card(
+                    margin: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                    child: ListTile(title: Text('Error loading post')),
+                  );
+                }
+                final postData =
+                    postSnapshot.data!.data() as Map<String, dynamic>;
+                return Card(
+                  margin: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                  child: InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              PostDetailScreen(postId: comment['postId']),
+                        ),
+                      );
+                    },
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          FutureBuilder<DocumentSnapshot>(
+                            future: FirebaseFirestore.instance
+                                .collection('users')
+                                .doc(postData['userId'])
+                                .get(),
+                            builder: (context, userSnapshot) {
+                              if (userSnapshot.connectionState ==
+                                  ConnectionState.waiting) {
+                                return Text('@loading...');
+                              }
+                              if (userSnapshot.hasError) {
+                                print(
+                                    'Error loading user data: ${userSnapshot.error}');
+                                return Text('@anonymous');
+                              }
+                              final userData = userSnapshot.data?.data()
+                                  as Map<String, dynamic>?;
+                              final userName = userData?['userName'] as String?;
+                              return Text(
+                                '@${userName?.isNotEmpty == true ? userName : 'anonymous'}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold
+                                ),
+                              );
+                            },
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            postData['title'] ?? '',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            comment['content'] ?? '',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                '${comment['points']} points',
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 12,
+                                ),
+                              ),
+                              Text(
+                                getRelativeTime(comment['timestamp'].toDate()),
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
             );
           },
         );
@@ -1502,17 +1861,22 @@ class _ProfileScreenState extends State<ProfileScreen>
         }
         if (snapshot.hasError) {
           print('Error in _buildSavedPostsList: ${snapshot.error}');
-          return Center(child: Text('Error loading saved posts: ${snapshot.error}'));
+          return Center(
+              child: Text('Error loading saved posts: ${snapshot.error}'));
         }
         final savedPosts = snapshot.data ?? [];
         return ListView.builder(
           itemCount: savedPosts.length,
           itemBuilder: (context, index) {
             final post = savedPosts[index].data() as Map<String, dynamic>;
-            return ListTile(
-              title: Text(post['title'] ?? ''),
-              subtitle: Text(post['content'] ?? ''),
-              trailing: Text('${post['points']} points'),
+            return PostCard(
+              title: post['title'] ?? '',
+              content: post['content'] ?? '',
+              points: post['points'] ?? 0,
+              commentCount: post['commentCount'] ?? 0,
+              timestamp: post['timestamp']?.toDate() ?? DateTime.now(),
+              postId: savedPosts[index].id,
+              userId: post['userId'] ?? '',
             );
           },
         );
@@ -1584,7 +1948,7 @@ class SettingsScreen extends StatelessWidget {
           ),
           _buildSectionHeader('Account'),
           ListTile(
-            leading: Icon(Icons.sync),
+            leading: Icon(Icons.corporate_fare),
             title: Text('Change commands'),
             onTap: () {
               // TODO: Implement change commands functionality
@@ -1673,6 +2037,27 @@ class SettingsScreen extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+String getRelativeTime(DateTime dateTime) {
+  final now = DateTime.now();
+  final difference = now.difference(dateTime);
+
+  if (difference.inSeconds < 60) {
+    return 'Now';
+  } else if (difference.inMinutes < 60) {
+    return '${difference.inMinutes} min ago';
+  } else if (difference.inHours < 24) {
+    return '${difference.inHours} hr ago';
+  } else if (difference.inDays < 30) {
+    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'} ago';
+  } else if (difference.inDays < 365) {
+    final months = (difference.inDays / 30).floor();
+    return '$months month${months == 1 ? '' : 's'} ago';
+  } else {
+    final years = (difference.inDays / 365).floor();
+    return '$years year${years == 1 ? '' : 's'} ago';
   }
 }
 

@@ -3,8 +3,7 @@ My app Scuttlebutt is going to be an anonymous feed-based platform for service m
 When giving me code, please give me the full code for the file that the code lives in. Not just the code that needs editing; even the unchanged parts. I shouldn't see things like "implement functionality here..." or "methods remain the same..." Ensure that the code changes don’t break any existing functionality. If rules need to be updated, give me the complete revised set of rules.
 
 Here's what I'd like help with
-- Username's should be displayed @username
-- Let usernames be empty strings. If it is an empty string, it should be @anonymous
-- Don't let people actually set their username to the string "anonymous"
+- A user shouldn't be able to save their own posts
+- A user should only be allowed to upvote once or downvote once. If the count is 0, they can upvote to 1, then downvote to 0, then downvote to -1. They can upvote back to 0 and back to 1 if they want. But no more than that. Does that make sense?
 
 Please ensure that any errors are printed to the terminal.
