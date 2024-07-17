@@ -14,6 +14,8 @@ class PostCard extends StatelessWidget {
   final DateTime timestamp;
   final String postId;
   final String userId;
+  final String userName;
+  final String profileEmoji;
   final bool isDetailView;
 
   const PostCard({
@@ -25,6 +27,8 @@ class PostCard extends StatelessWidget {
     required this.timestamp,
     required this.postId,
     required this.userId,
+    required this.userName,
+    required this.profileEmoji,
     this.isDetailView = false,
   }) : super(key: key);
 
@@ -56,48 +60,26 @@ class PostCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Expanded(
-                    child: FutureBuilder<DocumentSnapshot>(
-                      future: FirebaseFirestore.instance
-                          .collection('users')
-                          .doc(userId)
-                          .get(),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return CircularProgressIndicator();
-                        }
-                        if (snapshot.hasError) {
-                          print('Error loading user data: ${snapshot.error}');
-                          return Text('🙂 @anonymous');
-                        }
-                        final userData =
-                            snapshot.data?.data() as Map<String, dynamic>?;
-                        final userName = userData?['userName'] as String?;
-                        final emoji = userData?['profileEmoji'] as String?;
-                        return Row(
-                          children: [
-                            Text(emoji ?? '🙂'),
-                            SizedBox(width: 4),
-                            Text(
-                              userName == null || userName.isEmpty
-                                  ? '@anonymous'
-                                  : '@$userName',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            SizedBox(width: 8),
-                            Text(
-                              getRelativeTime(timestamp),
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ],
-                        );
-                      },
+                    child: Row(
+                      children: [
+                        Text(profileEmoji),
+                        SizedBox(width: 4),
+                        Text(
+                          userName.isEmpty ? '@anonymous' : '@$userName',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          getRelativeTime(timestamp),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   if (isCreator && !isDetailView)
@@ -131,7 +113,10 @@ class PostCard extends StatelessWidget {
                   Row(
                     children: [
                       IconButton(
-                        icon: Icon(Icons.arrow_upward),
+                        icon: Icon(Icons.arrow_upward,
+                            color: appState.userVotes[postId] == 1
+                                ? Colors.red
+                                : null),
                         onPressed: () {
                           appState.updatePostPoints(postId, 1);
                         },
@@ -152,7 +137,7 @@ class PostCard extends StatelessWidget {
                   IconButton(
                     icon: Icon(
                       isSaved ? Icons.bookmark : Icons.bookmark_border,
-                      color: isSaved ? Colors.blue[800] : null,
+                      color: isSaved ? Colors.grey[700]: null,
                     ),
                     onPressed: () {
                       appState.toggleSavedPost(postId);

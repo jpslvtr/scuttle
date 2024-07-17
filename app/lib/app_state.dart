@@ -83,14 +83,22 @@ class AppState extends ChangeNotifier {
       'title': title,
       'content': content,
       'userId': userId,
+      'userName': userName,
       'command': command,
       'feed': feed,
       'points': 0,
       'commentCount': 0,
       'timestamp': FieldValue.serverTimestamp(),
+      'profileEmoji': await getProfileEmoji(),
     });
 
     notifyListeners();
+  }
+
+  Future<String> getProfileEmoji() async {
+    DocumentSnapshot userDoc =
+        await FirebaseFirestore.instance.collection('users').doc(userId).get();
+    return (userDoc.data() as Map<String, dynamic>)['profileEmoji'] ?? '🙂';
   }
 
   Future<void> updatePostPoints(String postId, int delta) async {
@@ -134,10 +142,20 @@ class AppState extends ChangeNotifier {
   Future<void> createComment(String postId, String content) async {
     if (userId == null) return;
 
+    // Fetch the current user's data to get the username and profile emoji
+    DocumentSnapshot userDoc =
+        await FirebaseFirestore.instance.collection('users').doc(userId).get();
+
+    Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+    String currentUserName = userData['userName'] ?? '';
+    String currentProfileEmoji = userData['profileEmoji'] ?? '🙂';
+
     DocumentReference commentRef =
         await FirebaseFirestore.instance.collection('comments').add({
       'postId': postId,
       'userId': userId,
+      'userName': currentUserName,
+      'profileEmoji': currentProfileEmoji,
       'content': content,
       'points': 0,
       'timestamp': FieldValue.serverTimestamp(),
@@ -192,24 +210,50 @@ class AppState extends ChangeNotifier {
     if (userId == null) return;
 
     try {
+      // Get the user document to check if they had a username
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .get();
+
+      Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+      String? userNameToCheck = userData['userName'] as String?;
+      bool hadUsername = userNameToCheck != null && userNameToCheck.isNotEmpty;
+
+      if (hadUsername) {
+        // Update user's posts
+        await FirebaseFirestore.instance
+            .collection('posts')
+            .where('userId', isEqualTo: userId)
+            .get()
+            .then((snapshot) {
+          for (DocumentSnapshot doc in snapshot.docs) {
+            doc.reference.update({
+              'userName': '[deleted]',
+              'profileEmoji': '🫥',
+            });
+          }
+        });
+
+        // Update user's comments
+        await FirebaseFirestore.instance
+            .collection('comments')
+            .where('userId', isEqualTo: userId)
+            .get()
+            .then((snapshot) {
+          for (DocumentSnapshot doc in snapshot.docs) {
+            doc.reference.update({
+              'userName': '[deleted]',
+              'profileEmoji': '🫥',
+            });
+          }
+        });
+      }
+
+      // Delete user document
       await FirebaseFirestore.instance.collection('users').doc(userId).delete();
 
-      QuerySnapshot posts = await FirebaseFirestore.instance
-          .collection('posts')
-          .where('userId', isEqualTo: userId)
-          .get();
-      for (DocumentSnapshot doc in posts.docs) {
-        await doc.reference.delete();
-      }
-
-      QuerySnapshot comments = await FirebaseFirestore.instance
-          .collection('comments')
-          .where('userId', isEqualTo: userId)
-          .get();
-      for (DocumentSnapshot doc in comments.docs) {
-        await doc.reference.delete();
-      }
-
+      // Delete Firebase Auth user
       await FirebaseAuth.instance.currentUser?.delete();
 
       clearUserData();

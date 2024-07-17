@@ -82,6 +82,8 @@ class PostFeed extends StatelessWidget {
               timestamp: data['timestamp']?.toDate() ?? DateTime.now(),
               postId: document.id,
               userId: data['userId'] ?? '',
+              userName: data['userName'] ?? '',
+              profileEmoji: data['profileEmoji'] ?? '🙂',
             );
           }).toList(),
         );

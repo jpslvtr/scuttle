@@ -5,6 +5,7 @@ import 'home_screen.dart';
 import 'messages_screen.dart';
 import 'profile_screen.dart';
 import 'post_screen.dart';
+import 'settings_screen.dart';
 
 class ScuttlebuttApp extends StatelessWidget {
   const ScuttlebuttApp({Key? key}) : super(key: key);

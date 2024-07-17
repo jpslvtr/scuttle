@@ -8,6 +8,7 @@ import 'app_state.dart';
 import 'login_screen.dart';
 import 'post_detail_screen.dart';
 import 'post_card.dart';
+import 'settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
@@ -131,7 +132,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             children: <Widget>[
               ListTile(
                 leading: Icon(Icons.emoji_emotions),
-                title: Text('Change Emoji'),
+                title: Text('Change emoji'),
                 onTap: () {
                   Navigator.pop(context);
                   _showEmojiPicker(context, appState);
@@ -175,7 +176,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               '🙄',
               '🧐',
               '😴',
-              '🫥',
+              '😎',
               '🫨',
               '💀',
               '🤡',
@@ -208,7 +209,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setState) {
             return AlertDialog(
-              title: Text('Edit Username'),
+              title: Text('Set/edit username'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -278,7 +279,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       },
     );
   }
-
+ 
   bool _isValidUserName(String userName) {
     final RegExp validCharacters = RegExp(r'^[a-zA-Z0-9._]+$');
     return validCharacters.hasMatch(userName);
@@ -294,12 +295,15 @@ class _ProfileScreenState extends State<ProfileScreen>
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           print('Error in _buildPostsList: ${snapshot.error}');
-          return Center(child: Text('Error loading posts: ${snapshot.error}'));
+          return Center(child: Text('Error loading posts'));
         }
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(child: CircularProgressIndicator());
         }
         final posts = snapshot.data!.docs;
+        if (posts.isEmpty) {
+          return Center(child: Text('No posts yet'));
+        }
         return ListView.builder(
           itemCount: posts.length,
           itemBuilder: (context, index) {
@@ -312,6 +316,8 @@ class _ProfileScreenState extends State<ProfileScreen>
               timestamp: post['timestamp']?.toDate() ?? DateTime.now(),
               postId: posts[index].id,
               userId: post['userId'] ?? '',
+              userName: post['userName'] ?? '',
+              profileEmoji: post['profileEmoji'] ?? '🙂',
             );
           },
         );
@@ -327,23 +333,35 @@ class _ProfileScreenState extends State<ProfileScreen>
           .orderBy('timestamp', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          print('Error in _buildCommentsList: ${snapshot.error}');
-          return Center(
-              child: Text('Error loading comments: ${snapshot.error}'));
-        }
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(child: CircularProgressIndicator());
         }
+
+        if (snapshot.hasError) {
+          print('Error in _buildCommentsList: ${snapshot.error}');
+          return Center(child: Text('Error loading comments'));
+        }
+
+        if (!snapshot.hasData ||
+            snapshot.data == null ||
+            snapshot.data!.docs.isEmpty) {
+          return Center(child: Text('No comments yet'));
+        }
+
         final comments = snapshot.data!.docs;
+
         return ListView.builder(
           itemCount: comments.length,
           itemBuilder: (context, index) {
-            final comment = comments[index].data() as Map<String, dynamic>;
+            final commentData = comments[index].data() as Map<String, dynamic>?;
+            if (commentData == null) {
+              return SizedBox.shrink();
+            }
+
             return FutureBuilder<DocumentSnapshot>(
               future: FirebaseFirestore.instance
                   .collection('posts')
-                  .doc(comment['postId'])
+                  .doc(commentData['postId'])
                   .get(),
               builder: (context, postSnapshot) {
                 if (postSnapshot.connectionState == ConnectionState.waiting) {
@@ -352,125 +370,23 @@ class _ProfileScreenState extends State<ProfileScreen>
                     child: ListTile(title: Text('Loading...')),
                   );
                 }
-                if (postSnapshot.hasError) {
+
+                if (postSnapshot.hasError ||
+                    !postSnapshot.hasData ||
+                    postSnapshot.data == null) {
                   print(
                       'Error loading post for comment: ${postSnapshot.error}');
-                  return Card(
-                    margin: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                    child: ListTile(title: Text('Error loading post')),
-                  );
+                  return SizedBox.shrink();
                 }
+
                 final postData =
-                    postSnapshot.data!.data() as Map<String, dynamic>;
-                return Card(
-                  margin: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                  child: InkWell(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              PostDetailScreen(postId: comment['postId']),
-                        ),
-                      );
-                    },
-                    child: Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  postData['title'] ?? '',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                              ),
-                              IconButton(
-                                icon: Icon(Icons.delete, size: 20),
-                                onPressed: () => _showDeleteCommentConfirmation(
-                                    context, appState, comment['postId'], comments[index].id),
-                                padding: EdgeInsets.zero,
-                                constraints: BoxConstraints(),
-                              ),
-                            ],
-                          ),
-                          SizedBox(height: 8),
-                          FutureBuilder<DocumentSnapshot>(
-                            future: FirebaseFirestore.instance
-                                .collection('users')
-                                .doc(postData['userId'])
-                                .get(),
-                            builder: (context, userSnapshot) {
-                              if (userSnapshot.connectionState ==
-                                  ConnectionState.waiting) {
-                                return Text('@loading...');
-                              }
-                              if (userSnapshot.hasError) {
-                                print(
-                                    'Error loading user data: ${userSnapshot.error}');
-                                return Text('@anonymous');
-                              }
-                              final userData = userSnapshot.data?.data()
-                                  as Map<String, dynamic>?;
-                              final userName = userData?['userName'] as String?;
-                              return Text(
-                                '@${userName?.isNotEmpty == true ? userName : 'anonymous'}',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                  color: Colors.grey[600],
-                                ),
-                              );
-                            },
-                          ),
-                          SizedBox(height: 8),
-                          Text(
-                            comment['content'] ?? '',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Row(
-                                children: [
-                                  IconButton(
-                                    icon: Icon(Icons.arrow_upward, size: 16),
-                                    onPressed: () {
-                                      appState.updateCommentPoints(comments[index].id, 1);
-                                    },
-                                  ),
-                                  Text('${comment['points']}',
-                                      style: TextStyle(fontSize: 14)),
-                                  IconButton(
-                                    icon: Icon(Icons.arrow_downward, size: 16),
-                                    onPressed: () {
-                                      appState.updateCommentPoints(comments[index].id, -1);
-                                    },
-                                  ),
-                                ],
-                              ),
-                              Text(
-                                getRelativeTime(comment['timestamp'].toDate()),
-                                style: TextStyle(
-                                  color: Colors.grey[600],
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
+                    postSnapshot.data!.data() as Map<String, dynamic>?;
+                if (postData == null) {
+                  return SizedBox.shrink();
+                }
+
+                return _buildCommentCard(context, appState, commentData,
+                    postData, comments[index].id);
               },
             );
           },
@@ -479,13 +395,119 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  void _showDeleteCommentConfirmation(BuildContext context, AppState appState, String postId, String commentId) {
+  Widget _buildCommentCard(
+      BuildContext context,
+      AppState appState,
+      Map<String, dynamic> commentData,
+      Map<String, dynamic> postData,
+      String commentId) {
+    return Card(
+      margin: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) =>
+                  PostDetailScreen(postId: commentData['postId']),
+            ),
+          );
+        },
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      postData['title'] ?? '',
+                      style: TextStyle(
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.delete, size: 20),
+                    onPressed: () => _showDeleteCommentConfirmation(
+                        context, appState, commentData['postId'], commentId),
+                    padding: EdgeInsets.zero,
+                    constraints: BoxConstraints(),
+                  ),
+                ],
+              ),
+              SizedBox(height: 8),
+              Row(
+                children: [
+                  FutureBuilder<DocumentSnapshot>(
+                    future: FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(postData['userId'])
+                        .get(),
+                    builder: (context, userSnapshot) {
+                      if (userSnapshot.connectionState ==
+                          ConnectionState.waiting) {
+                        return Text('@loading...');
+                      }
+                      if (userSnapshot.hasError || !userSnapshot.hasData) {
+                        print('Error loading user data: ${userSnapshot.error}');
+                        return Text('@anonymous');
+                      }
+                      final userData =
+                          userSnapshot.data!.data() as Map<String, dynamic>?;
+                      final userName = userData?['userName'] as String?;
+                      return Text(
+                        '@${userName?.isNotEmpty == true ? userName : 'anonymous'}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                        ),
+                      );
+                    },
+                  ),
+                  SizedBox(width: 8),
+                  Text(
+                    getRelativeTime(commentData['timestamp'].toDate()),
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 14,
+                    ),
+                  ),
+                  SizedBox(width: 8),
+                  Icon(Icons.arrow_upward, size: 14, color: Colors.red),
+                  SizedBox(width: 4),
+                  Text(
+                    '${commentData['points']}',
+                    style: TextStyle(fontSize: 14),
+                  ),
+                ],
+              ),
+              SizedBox(height: 8),
+              Text(
+                commentData['content'] ?? '',
+                style: TextStyle(
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showDeleteCommentConfirmation(BuildContext context, AppState appState,
+      String postId, String commentId) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           title: Text('Delete Comment'),
-          content: Text('Are you sure you want to delete this comment? This action cannot be undone.'),
+          content: Text(
+              'Are you sure you want to delete this comment? This action cannot be undone.'),
           actions: <Widget>[
             TextButton(
               child: Text('Cancel'),
@@ -515,14 +537,19 @@ class _ProfileScreenState extends State<ProfileScreen>
         }
         if (snapshot.hasError) {
           print('Error in _buildSavedPostsList: ${snapshot.error}');
-          return Center(
-              child: Text('Error loading saved posts: ${snapshot.error}'));
+          return Center(child: Text('Error loading saved posts'));
         }
         final savedPosts = snapshot.data ?? [];
+        if (savedPosts.isEmpty) {
+          return Center(child: Text('No saved posts yet'));
+        }
         return ListView.builder(
           itemCount: savedPosts.length,
           itemBuilder: (context, index) {
-            final post = savedPosts[index].data() as Map<String, dynamic>;
+            final post = savedPosts[index].data() as Map<String, dynamic>?;
+            if (post == null) {
+              return SizedBox.shrink();
+            }
             return PostCard(
               title: post['title'] ?? '',
               content: post['content'] ?? '',
@@ -531,163 +558,10 @@ class _ProfileScreenState extends State<ProfileScreen>
               timestamp: post['timestamp']?.toDate() ?? DateTime.now(),
               postId: savedPosts[index].id,
               userId: post['userId'] ?? '',
+              userName: post['userName'] ?? '',
+              profileEmoji: post['profileEmoji'] ?? '🙂',
             );
           },
-        );
-      },
-    );
-  }
-}
-
-class SettingsScreen extends StatelessWidget {
-  const SettingsScreen({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Settings'),
-      ),
-      body: ListView(
-        children: [
-          _buildSectionHeader('App'),
-          ListTile(
-            leading: Icon(Icons.notifications),
-            title: Text('Notification options'),
-            onTap: () {
-              // TODO: Implement notification options
-              print('Notification options tapped');
-            },
-          ),
-          _buildSectionHeader('Support'),
-          ListTile(
-            leading: Icon(Icons.privacy_tip),
-            title: Text('Privacy policy'),
-            onTap: () {
-              // TODO: Show privacy policy
-              print('Privacy policy tapped');
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.description),
-            title: Text('Terms of Service'),
-            onTap: () {
-              // TODO: Show Terms of Service
-              print('Terms of Service tapped');
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.people),
-            title: Text('Community guidelines'),
-            onTap: () {
-              // TODO: Show community guidelines
-              print('Community guidelines tapped');
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.bug_report),
-            title: Text('Report a bug'),
-            onTap: () {
-              // TODO: Implement bug reporting
-              print('Report a bug tapped');
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.contact_support),
-            title: Text('Contact us'),
-            onTap: () {
-              // TODO: Implement contact functionality
-              print('Contact us tapped');
-            },
-          ),
-          _buildSectionHeader('Account'),
-          ListTile(
-            leading: Icon(Icons.corporate_fare),
-            title: Text('Change commands'),
-            onTap: () {
-              // TODO: Implement change commands functionality
-              print('Change commands tapped');
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.exit_to_app),
-            title: Text('Log Out'),
-            onTap: () async {
-              await FirebaseAuth.instance.signOut();
-              Provider.of<AppState>(context, listen: false).clearUserData();
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (context) => LoginScreen()),
-                (Route<dynamic> route) => false,
-              );
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.delete_forever, color: Colors.red),
-            title: Text(
-              'Delete Account',
-              style: TextStyle(color: Colors.red),
-            ),
-            onTap: () {
-              _showDeleteAccountConfirmation(context);
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
-          color: Colors.blue[800],
-        ),
-      ),
-    );
-  }
-
-  void _showDeleteAccountConfirmation(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Delete Account'),
-          content: Text(
-              'Are you sure you want to delete your account? This action cannot be undone.'),
-          actions: <Widget>[
-            TextButton(
-              child: Text('Cancel'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-            TextButton(
-              child: Text('Delete', style: TextStyle(color: Colors.red)),
-              onPressed: () async {
-                Navigator.of(context).pop();
-                try {
-                  await Provider.of<AppState>(context, listen: false)
-                      .deleteAccount();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Account deleted successfully')),
-                  );
-                  Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(builder: (context) => LoginScreen()),
-                    (Route<dynamic> route) => false,
-                  );
-                } catch (e) {
-                  print('Error deleting account: $e');
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to delete account: $e')),
-                  );
-                }
-              },
-            ),
-          ],
         );
       },
     );
