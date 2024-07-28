@@ -14,8 +14,8 @@ class PostCard extends StatelessWidget {
   final DateTime timestamp;
   final String postId;
   final String userId;
-  final String userName;
   final String profileEmoji;
+  final String userName;
   final bool isDetailView;
 
   const PostCard({
@@ -27,8 +27,8 @@ class PostCard extends StatelessWidget {
     required this.timestamp,
     required this.postId,
     required this.userId,
-    required this.userName,
     required this.profileEmoji,
+    required this.userName,
     this.isDetailView = false,
   }) : super(key: key);
 
@@ -65,7 +65,7 @@ class PostCard extends StatelessWidget {
                         Text(profileEmoji),
                         SizedBox(width: 4),
                         Text(
-                          userName.isEmpty ? '@anonymous' : '@$userName',
+                          userName,
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
@@ -113,17 +113,24 @@ class PostCard extends StatelessWidget {
                   Row(
                     children: [
                       IconButton(
-                        icon: Icon(Icons.arrow_upward,
-                            color: appState.userVotes[postId] == 1
-                                ? Colors.red
-                                : null),
+                        icon: Icon(
+                          Icons.arrow_upward,
+                          color: appState.userVotes[postId] == 1
+                              ? Colors.red
+                              : null,
+                        ),
                         onPressed: () {
                           appState.updatePostPoints(postId, 1);
                         },
                       ),
                       Text('$points'),
                       IconButton(
-                        icon: Icon(Icons.arrow_downward),
+                        icon: Icon(
+                          Icons.arrow_downward,
+                          color: appState.userVotes[postId] == -1
+                              ? Colors.red
+                              : null,
+                        ),
                         onPressed: () {
                           appState.updatePostPoints(postId, -1);
                         },
@@ -137,7 +144,7 @@ class PostCard extends StatelessWidget {
                   IconButton(
                     icon: Icon(
                       isSaved ? Icons.bookmark : Icons.bookmark_border,
-                      color: isSaved ? Colors.grey[700]: null,
+                      color: isSaved ? Colors.grey[700] : null,
                     ),
                     onPressed: () {
                       appState.toggleSavedPost(postId);

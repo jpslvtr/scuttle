@@ -8,8 +8,8 @@ import 'profile_screen.dart';
 import 'settings_screen.dart';
 import 'app_state.dart';
 
-class ScuttlebuttApp extends StatelessWidget {
-  const ScuttlebuttApp({Key? key}) : super(key: key);
+class ScuttleApp extends StatelessWidget {
+  const ScuttleApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -28,20 +28,20 @@ class ScuttlebuttApp extends StatelessWidget {
             unselectedItemColor: Colors.grey,
           ),
         ),
-        home: ScuttlebuttHomePage(),
+        home: ScuttleHomePage(),
       ),
     );
   }
 }
 
-class ScuttlebuttHomePage extends StatefulWidget {
-  const ScuttlebuttHomePage({Key? key}) : super(key: key);
+class ScuttleHomePage extends StatefulWidget {
+  const ScuttleHomePage({Key? key}) : super(key: key);
 
   @override
-  _ScuttlebuttHomePageState createState() => _ScuttlebuttHomePageState();
+  _ScuttleHomePageState createState() => _ScuttleHomePageState();
 }
 
-class _ScuttlebuttHomePageState extends State<ScuttlebuttHomePage> {
+class _ScuttleHomePageState extends State<ScuttleHomePage> {
   int _selectedIndex = 0;
 
   final List<Widget> _widgetOptions = <Widget>[

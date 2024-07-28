@@ -74,12 +74,14 @@ class PostDetailScreen extends StatelessWidget {
                           Row(
                             children: [
                               IconButton(
-                                icon: Icon(Icons.arrow_upward,
-                                    color: Provider.of<AppState>(context)
-                                                .userVotes[postId] ==
-                                            1
-                                        ? Colors.red
-                                        : null),
+                                icon: Icon(
+                                  Icons.arrow_upward,
+                                  color: Provider.of<AppState>(context)
+                                              .userVotes[postId] ==
+                                          1
+                                      ? Colors.red
+                                      : null,
+                                ),
                                 onPressed: () {
                                   Provider.of<AppState>(context, listen: false)
                                       .updatePostPoints(postId, 1);
@@ -87,7 +89,14 @@ class PostDetailScreen extends StatelessWidget {
                               ),
                               Text('${postData['points']}'),
                               IconButton(
-                                icon: Icon(Icons.arrow_downward),
+                                icon: Icon(
+                                  Icons.arrow_downward,
+                                  color: Provider.of<AppState>(context)
+                                              .userVotes[postId] ==
+                                          -1
+                                      ? Colors.red
+                                      : null,
+                                ),
                                 onPressed: () {
                                   Provider.of<AppState>(context, listen: false)
                                       .updatePostPoints(postId, -1);
@@ -142,54 +151,45 @@ class PostDetailScreen extends StatelessWidget {
   }
 
   Widget _buildUserInfo(Map<String, dynamic> postData) {
-    final userName = postData['userName'] as String?;
-    final emoji = postData['profileEmoji'] as String?;
-    final timestamp = postData['timestamp']?.toDate() ?? DateTime.now();
+    return FutureBuilder<DocumentSnapshot>(
+      future: FirebaseFirestore.instance
+          .collection('users')
+          .doc(postData['userId'])
+          .get(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Text('Loading...');
+        }
+        if (snapshot.hasError || !snapshot.hasData) {
+          return Text('@[deleted]');
+        }
+        final userData = snapshot.data!.data() as Map<String, dynamic>?;
+        final userName = userData?['userName'] as String? ?? '';
+        final emoji = userData?['profileEmoji'] as String? ?? '🙂';
+        final timestamp = postData['timestamp']?.toDate() ?? DateTime.now();
 
-    if (userName == '[deleted]') {
-      return Row(
-        children: [
-          Text('🫥'),
-          SizedBox(width: 4),
-          Text(
-            '[deleted]',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
+        return Row(
+          children: [
+            Text(emoji),
+            SizedBox(width: 4),
+            Text(
+              userName.isEmpty ? '@[deleted]' : '@$userName',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-          ),
-          SizedBox(width: 8),
-          Text(
-            getRelativeTime(timestamp),
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[600],
+            SizedBox(width: 8),
+            Text(
+              getRelativeTime(timestamp),
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+              ),
             ),
-          ),
-        ],
-      );
-    }
-
-    return Row(
-      children: [
-        Text(emoji ?? '🙂'),
-        SizedBox(width: 4),
-        Text(
-          userName == null || userName.isEmpty ? '@anonymous' : '@$userName',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        SizedBox(width: 8),
-        Text(
-          getRelativeTime(timestamp),
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[600],
-          ),
-        ),
-      ],
+          ],
+        );
+      },
     );
   }
 
@@ -257,8 +257,6 @@ class CommentList extends StatelessWidget {
               points: data['points'] ?? 0,
               timestamp: data['timestamp']?.toDate() ?? DateTime.now(),
               commentId: document.id,
-              userName: data['userName'] ?? '',
-              profileEmoji: data['profileEmoji'] ?? '🙂',
               userId: data['userId'] ?? '',
               postId: postId,
             );
@@ -274,8 +272,6 @@ class CommentCard extends StatelessWidget {
   final int points;
   final DateTime timestamp;
   final String commentId;
-  final String userName;
-  final String profileEmoji;
   final String userId;
   final String postId;
 
@@ -285,8 +281,6 @@ class CommentCard extends StatelessWidget {
     required this.points,
     required this.timestamp,
     required this.commentId,
-    required this.userName,
-    required this.profileEmoji,
     required this.userId,
     required this.postId,
   }) : super(key: key);
@@ -306,7 +300,38 @@ class CommentCard extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _buildUserInfo(),
+                FutureBuilder<DocumentSnapshot>(
+                  future: FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(userId)
+                      .get(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return Text('Loading...');
+                    }
+                    if (snapshot.hasError || !snapshot.hasData) {
+                      return Text('@[deleted]');
+                    }
+                    final userData =
+                        snapshot.data!.data() as Map<String, dynamic>?;
+                    final userName = userData?['userName'] as String? ?? '';
+                    final profileEmoji =
+                        userData?['profileEmoji'] as String? ?? '🙂';
+                    return Row(
+                      children: [
+                        Text(profileEmoji),
+                        SizedBox(width: 4),
+                        Text(
+                          userName.isEmpty ? '@[deleted]' : '@$userName',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
                 if (userId == appState.userId)
                   IconButton(
                     icon: Icon(Icons.delete, size: 20),
@@ -326,9 +351,11 @@ class CommentCard extends StatelessWidget {
                 Row(
                   children: [
                     IconButton(
-                      icon: Icon(Icons.arrow_upward,
-                          size: 16,
-                          color: currentVote == 1 ? Colors.red : null),
+                      icon: Icon(
+                        Icons.arrow_upward,
+                        size: 16,
+                        color: currentVote == 1 ? Colors.red : null,
+                      ),
                       onPressed: () {
                         appState.updateCommentPoints(
                             commentId, currentVote == 1 ? -1 : 1);
@@ -336,7 +363,11 @@ class CommentCard extends StatelessWidget {
                     ),
                     Text('$points', style: TextStyle(fontSize: 12)),
                     IconButton(
-                      icon: Icon(Icons.arrow_downward, size: 16),
+                      icon: Icon(
+                        Icons.arrow_downward,
+                        size: 16,
+                        color: currentVote == -1 ? Colors.red : null,
+                      ),
                       onPressed: () {
                         appState.updateCommentPoints(
                             commentId, currentVote == -1 ? 1 : -1);
@@ -356,22 +387,6 @@ class CommentCard extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildUserInfo() {
-    return Row(
-      children: [
-        Text(profileEmoji),
-        SizedBox(width: 4),
-        Text(
-          userName.isEmpty ? '@anonymous' : '@$userName',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ],
     );
   }
 

@@ -51,14 +51,6 @@ class SettingsScreen extends StatelessWidget {
             },
           ),
           ListTile(
-            leading: Icon(Icons.description),
-            title: Text('Terms of Service'),
-            onTap: () {
-              // TODO: Show Terms of Service
-              print('Terms of Service tapped');
-            },
-          ),
-          ListTile(
             leading: Icon(Icons.people),
             title: Text('Community guidelines'),
             onTap: () {
@@ -72,14 +64,6 @@ class SettingsScreen extends StatelessWidget {
             onTap: () {
               // TODO: Implement bug reporting
               print('Report a bug tapped');
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.contact_support),
-            title: Text('Contact us'),
-            onTap: () {
-              // TODO: Implement contact functionality
-              print('Contact us tapped');
             },
           ),
           _buildSectionHeader('Account'),

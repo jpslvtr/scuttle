@@ -18,7 +18,7 @@ class MyApp extends StatelessWidget {
     return ChangeNotifierProvider(
       create: (context) => AppState(),
       child: MaterialApp(
-        title: 'Scuttlebutt',
+        title: 'Scuttle',
         theme: ThemeData(
           primarySwatch: Colors.blue,
           visualDensity: VisualDensity.adaptivePlatformDensity,
@@ -45,7 +45,7 @@ class AuthWrapper extends StatelessWidget {
             Provider.of<AppState>(context, listen: false)
                 .initializeUser(user.uid);
           });
-          return ScuttlebuttHomePage();
+          return ScuttleHomePage();
         }
         return Scaffold(body: Center(child: CircularProgressIndicator()));
       },

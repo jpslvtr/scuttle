@@ -164,26 +164,8 @@ class _ProfileScreenState extends State<ProfileScreen>
           content: Wrap(
             spacing: 10,
             children: [
-              '🙂',
-              '🙃',
-              '😐',
-              '😬',
-              '🥲',
-              '🤔',
-              '🤷',
-              '🤷‍♀️',
-              '🫡',
-              '😳',
-              '🫣',
-              '🙄',
-              '🧐',
-              '😴',
-              '😎',
-              '🫨',
-              '💀',
-              '🤡',
-              '🥸',
-              '👾'
+              '🙂', '🙃', '😐', '😬', '🥲', '🤔', '🤷', '🤷‍♀️', '🫡', '😳',
+              '🫣', '🙄', '🧐', '😴', '😎', '🫨', '💀', '🤡', '🥸', '👾'
             ]
                 .map((emoji) => GestureDetector(
                       onTap: () {
@@ -318,8 +300,8 @@ class _ProfileScreenState extends State<ProfileScreen>
               timestamp: post['timestamp']?.toDate() ?? DateTime.now(),
               postId: posts[index].id,
               userId: post['userId'] ?? '',
-              userName: post['userName'] ?? '',
               profileEmoji: post['profileEmoji'] ?? '🙂',
+              userName: '@${post['userName'] ?? 'anonymous'}',
             );
           },
         );
@@ -455,13 +437,15 @@ class _ProfileScreenState extends State<ProfileScreen>
                       }
                       if (userSnapshot.hasError || !userSnapshot.hasData) {
                         print('Error loading user data: ${userSnapshot.error}');
-                        return Text('@anonymous');
+                        return Text('@[deleted]');
                       }
                       final userData =
                           userSnapshot.data!.data() as Map<String, dynamic>?;
                       final userName = userData?['userName'] as String?;
                       return Text(
-                        '@${userName?.isNotEmpty == true ? userName : 'anonymous'}',
+                        userName == null || userName.isEmpty
+                            ? '@[deleted]'
+                            : '@$userName',
                         style: TextStyle(
                           fontSize: 14,
                           color: Colors.grey[600],
@@ -552,16 +536,38 @@ class _ProfileScreenState extends State<ProfileScreen>
             if (post == null) {
               return SizedBox.shrink();
             }
-            return PostCard(
-              title: post['title'] ?? '',
-              content: post['content'] ?? '',
-              points: post['points'] ?? 0,
-              commentCount: post['commentCount'] ?? 0,
-              timestamp: post['timestamp']?.toDate() ?? DateTime.now(),
-              postId: savedPosts[index].id,
-              userId: post['userId'] ?? '',
-              userName: post['userName'] ?? '',
-              profileEmoji: post['profileEmoji'] ?? '🙂',
+            return FutureBuilder<DocumentSnapshot>(
+              future: FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(post['userId'])
+                  .get(),
+              builder: (context, userSnapshot) {
+                String userName = '@[deleted]';
+                String profileEmoji = '🫥';
+                if (userSnapshot.connectionState == ConnectionState.done &&
+                    userSnapshot.hasData) {
+                  final userData =
+                      userSnapshot.data!.data() as Map<String, dynamic>?;
+                  userName = userData?['userName'] as String? ?? '';
+                  profileEmoji = userData?['profileEmoji'] as String? ?? '🫥';
+                  if (userName.isEmpty) {
+                    userName = '@[deleted]';
+                  } else {
+                    userName = '@$userName';
+                  }
+                }
+                return PostCard(
+                  title: post['title'] ?? '',
+                  content: post['content'] ?? '',
+                  points: post['points'] ?? 0,
+                  commentCount: post['commentCount'] ?? 0,
+                  timestamp: post['timestamp']?.toDate() ?? DateTime.now(),
+                  postId: savedPosts[index].id,
+                  userId: post['userId'] ?? '',
+                  profileEmoji: profileEmoji,
+                  userName: userName,
+                );
+              },
             );
           },
         );

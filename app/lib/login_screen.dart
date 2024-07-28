@@ -43,7 +43,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _navigateToHome() {
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (context) => ScuttlebuttHomePage()),
+      MaterialPageRoute(builder: (context) => ScuttleHomePage()),
     );
   }
 
@@ -77,7 +77,7 @@ class _LoginScreenState extends State<LoginScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                'Scuttlebutt',
+                'Scuttle',
                 style: TextStyle(
                   fontSize: 48,
                   fontWeight: FontWeight.bold,

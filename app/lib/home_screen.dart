@@ -1,3 +1,5 @@
+// File: app/lib/home_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
@@ -78,8 +80,9 @@ class HomeScreen extends StatelessWidget {
               Expanded(
                 child: TabBarView(
                   children: [
-                    PostFeed(feedType: appState.currentFeed),
-                    PostFeed(feedType: 'My Command'),
+                    PostFeed(feedType: appState.currentFeed, sortBy: 'points'),
+                    PostFeed(
+                        feedType: appState.currentFeed, sortBy: 'timestamp'),
                   ],
                 ),
               ),
@@ -93,20 +96,21 @@ class HomeScreen extends StatelessWidget {
 
 class PostFeed extends StatelessWidget {
   final String feedType;
+  final String sortBy;
 
-  const PostFeed({Key? key, required this.feedType}) : super(key: key);
+  const PostFeed({Key? key, required this.feedType, required this.sortBy})
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
-    final currentFeed =
-        feedType == 'My Command' ? appState.command : appState.currentFeed;
+    final currentFeed = feedType == 'My Command' ? appState.command : feedType;
 
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('posts')
           .where('feed', isEqualTo: currentFeed)
-          .orderBy('timestamp', descending: true)
+          .orderBy(sortBy, descending: true)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
@@ -128,16 +132,38 @@ class PostFeed extends StatelessWidget {
         return ListView(
           children: snapshot.data!.docs.map((DocumentSnapshot document) {
             Map<String, dynamic> data = document.data() as Map<String, dynamic>;
-            return PostCard(
-              title: data['title'] ?? '',
-              content: data['content'] ?? '',
-              points: data['points'] ?? 0,
-              commentCount: data['commentCount'] ?? 0,
-              timestamp: data['timestamp']?.toDate() ?? DateTime.now(),
-              postId: document.id,
-              userId: data['userId'] ?? '',
-              userName: data['userName'] ?? '',
-              profileEmoji: data['profileEmoji'] ?? '🙂',
+            return FutureBuilder<DocumentSnapshot>(
+              future: FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(data['userId'])
+                  .get(),
+              builder: (context, userSnapshot) {
+                String userName = '@[deleted]';
+                String profileEmoji = '🫥';
+                if (userSnapshot.connectionState == ConnectionState.done &&
+                    userSnapshot.hasData) {
+                  final userData =
+                      userSnapshot.data!.data() as Map<String, dynamic>?;
+                  userName = userData?['userName'] as String? ?? '';
+                  profileEmoji = userData?['profileEmoji'] as String? ?? '🫥';
+                  if (userName.isEmpty) {
+                    userName = '@[deleted]';
+                  } else {
+                    userName = '@$userName';
+                  }
+                }
+                return PostCard(
+                  title: data['title'] ?? '',
+                  content: data['content'] ?? '',
+                  points: data['points'] ?? 0,
+                  commentCount: data['commentCount'] ?? 0,
+                  timestamp: data['timestamp']?.toDate() ?? DateTime.now(),
+                  postId: document.id,
+                  userId: data['userId'] ?? '',
+                  profileEmoji: profileEmoji,
+                  userName: userName,
+                );
+              },
             );
           }).toList(),
         );

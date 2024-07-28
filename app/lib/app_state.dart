@@ -120,11 +120,16 @@ class AppState extends ChangeNotifier {
           FirebaseFirestore.instance.collection('posts').doc(postId);
 
       int currentVote = userVotes[postId] ?? 0;
-      int newVote = currentVote + delta;
+      int newVote = 0;
 
-      if (newVote.abs() > 1) {
-        print('Cannot vote more than once in each direction');
-        return;
+      if (currentVote == delta) {
+        // If the user clicks the same vote button again, remove the vote
+        newVote = 0;
+        delta = -currentVote;
+      } else {
+        // Otherwise, update the vote
+        newVote = delta;
+        delta = newVote - currentVote;
       }
 
       await FirebaseFirestore.instance.runTransaction((transaction) async {
@@ -200,7 +205,7 @@ class AppState extends ChangeNotifier {
         }
 
         int oldPoints = freshComment.get('points') as int;
-        int newPoints = oldPoints + delta;
+        int newPoints = oldPoints + (newVote - currentVote);
 
         transaction.update(commentRef, {'points': newPoints});
 
@@ -301,15 +306,47 @@ class AppState extends ChangeNotifier {
           print('Error: Username is not available');
           return;
         }
+
+        // Update posts
+        QuerySnapshot postsSnapshot = await FirebaseFirestore.instance
+            .collection('posts')
+            .where('userId', isEqualTo: userId)
+            .get();
+
+        WriteBatch batch = FirebaseFirestore.instance.batch();
+
+        for (DocumentSnapshot doc in postsSnapshot.docs) {
+          batch.update(doc.reference, {'userName': newUserName});
+        }
+
+        // Update comments
+        QuerySnapshot commentsSnapshot = await FirebaseFirestore.instance
+            .collection('comments')
+            .where('userId', isEqualTo: userId)
+            .get();
+
+        for (DocumentSnapshot doc in commentsSnapshot.docs) {
+          batch.update(doc.reference, {'userName': newUserName});
+        }
+
+        // Update user document
+        DocumentReference userRef =
+            FirebaseFirestore.instance.collection('users').doc(userId);
+        batch.update(userRef, data);
+
+        // Commit the batch
+        await batch.commit();
+
+        // Update local state
+        userName = newUserName;
+      } else {
+        // If we're not updating the username, just update the user document
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId)
+            .update(data);
       }
 
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .update(data);
-      if (data.containsKey('userName')) {
-        userName = data['userName'];
-      }
       notifyListeners();
     } catch (e) {
       print('Error updating user profile: $e');

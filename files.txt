@@ -122,11 +122,16 @@ class AppState extends ChangeNotifier {
           FirebaseFirestore.instance.collection('posts').doc(postId);
 
       int currentVote = userVotes[postId] ?? 0;
-      int newVote = currentVote + delta;
+      int newVote = 0;
 
-      if (newVote.abs() > 1) {
-        print('Cannot vote more than once in each direction');
-        return;
+      if (currentVote == delta) {
+        // If the user clicks the same vote button again, remove the vote
+        newVote = 0;
+        delta = -currentVote;
+      } else {
+        // Otherwise, update the vote
+        newVote = delta;
+        delta = newVote - currentVote;
       }
 
       await FirebaseFirestore.instance.runTransaction((transaction) async {
@@ -202,7 +207,7 @@ class AppState extends ChangeNotifier {
         }
 
         int oldPoints = freshComment.get('points') as int;
-        int newPoints = oldPoints + delta;
+        int newPoints = oldPoints + (newVote - currentVote);
 
         transaction.update(commentRef, {'points': newPoints});
 
@@ -303,15 +308,47 @@ class AppState extends ChangeNotifier {
           print('Error: Username is not available');
           return;
         }
+
+        // Update posts
+        QuerySnapshot postsSnapshot = await FirebaseFirestore.instance
+            .collection('posts')
+            .where('userId', isEqualTo: userId)
+            .get();
+
+        WriteBatch batch = FirebaseFirestore.instance.batch();
+
+        for (DocumentSnapshot doc in postsSnapshot.docs) {
+          batch.update(doc.reference, {'userName': newUserName});
+        }
+
+        // Update comments
+        QuerySnapshot commentsSnapshot = await FirebaseFirestore.instance
+            .collection('comments')
+            .where('userId', isEqualTo: userId)
+            .get();
+
+        for (DocumentSnapshot doc in commentsSnapshot.docs) {
+          batch.update(doc.reference, {'userName': newUserName});
+        }
+
+        // Update user document
+        DocumentReference userRef =
+            FirebaseFirestore.instance.collection('users').doc(userId);
+        batch.update(userRef, data);
+
+        // Commit the batch
+        await batch.commit();
+
+        // Update local state
+        userName = newUserName;
+      } else {
+        // If we're not updating the username, just update the user document
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId)
+            .update(data);
       }
 
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .update(data);
-      if (data.containsKey('userName')) {
-        userName = data['userName'];
-      }
       notifyListeners();
     } catch (e) {
       print('Error updating user profile: $e');
@@ -449,6 +486,8 @@ class AppState extends ChangeNotifier {
 =================================================================
 
 File: app/lib/home_screen.dart
+
+// File: app/lib/home_screen.dart
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -588,7 +627,6 @@ class PostFeed extends StatelessWidget {
               timestamp: data['timestamp']?.toDate() ?? DateTime.now(),
               postId: document.id,
               userId: data['userId'] ?? '',
-              userName: data['userName'] ?? '',
               profileEmoji: data['profileEmoji'] ?? '🙂',
             );
           }).toList(),
@@ -647,7 +685,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _navigateToHome() {
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (context) => ScuttlebuttHomePage()),
+      MaterialPageRoute(builder: (context) => ScuttleHomePage()),
     );
   }
 
@@ -681,7 +719,7 @@ class _LoginScreenState extends State<LoginScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                'Scuttlebutt',
+                'Scuttle',
                 style: TextStyle(
                   fontSize: 48,
                   fontWeight: FontWeight.bold,
@@ -740,7 +778,7 @@ class MyApp extends StatelessWidget {
     return ChangeNotifierProvider(
       create: (context) => AppState(),
       child: MaterialApp(
-        title: 'Scuttlebutt',
+        title: 'Scuttle',
         theme: ThemeData(
           primarySwatch: Colors.blue,
           visualDensity: VisualDensity.adaptivePlatformDensity,
@@ -767,7 +805,7 @@ class AuthWrapper extends StatelessWidget {
             Provider.of<AppState>(context, listen: false)
                 .initializeUser(user.uid);
           });
-          return ScuttlebuttHomePage();
+          return ScuttleHomePage();
         }
         return Scaffold(body: Center(child: CircularProgressIndicator()));
       },
@@ -812,7 +850,6 @@ class PostCard extends StatelessWidget {
   final DateTime timestamp;
   final String postId;
   final String userId;
-  final String userName;
   final String profileEmoji;
   final bool isDetailView;
 
@@ -825,7 +862,6 @@ class PostCard extends StatelessWidget {
     required this.timestamp,
     required this.postId,
     required this.userId,
-    required this.userName,
     required this.profileEmoji,
     this.isDetailView = false,
   }) : super(key: key);
@@ -858,26 +894,44 @@ class PostCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Expanded(
-                    child: Row(
-                      children: [
-                        Text(profileEmoji),
-                        SizedBox(width: 4),
-                        Text(
-                          userName.isEmpty ? '@anonymous' : '@$userName',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        SizedBox(width: 8),
-                        Text(
-                          getRelativeTime(timestamp),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                      ],
+                    child: FutureBuilder<DocumentSnapshot>(
+                      future: FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(userId)
+                          .get(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return Text('Loading...');
+                        }
+                        if (snapshot.hasError || !snapshot.hasData) {
+                          return Text('@[deleted]');
+                        }
+                        final userData =
+                            snapshot.data!.data() as Map<String, dynamic>?;
+                        final userName = userData?['userName'] as String? ?? '';
+                        return Row(
+                          children: [
+                            Text(profileEmoji),
+                            SizedBox(width: 4),
+                            Text(
+                              userName.isEmpty ? '@anonymous' : '@$userName',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              getRelativeTime(timestamp),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                   ),
                   if (isCreator && !isDetailView)
@@ -911,17 +965,24 @@ class PostCard extends StatelessWidget {
                   Row(
                     children: [
                       IconButton(
-                        icon: Icon(Icons.arrow_upward,
-                            color: appState.userVotes[postId] == 1
-                                ? Colors.red
-                                : null),
+                        icon: Icon(
+                          Icons.arrow_upward,
+                          color: appState.userVotes[postId] == 1
+                              ? Colors.red
+                              : null,
+                        ),
                         onPressed: () {
                           appState.updatePostPoints(postId, 1);
                         },
                       ),
                       Text('$points'),
                       IconButton(
-                        icon: Icon(Icons.arrow_downward),
+                        icon: Icon(
+                          Icons.arrow_downward,
+                          color: appState.userVotes[postId] == -1
+                              ? Colors.red
+                              : null,
+                        ),
                         onPressed: () {
                           appState.updatePostPoints(postId, -1);
                         },
@@ -935,7 +996,7 @@ class PostCard extends StatelessWidget {
                   IconButton(
                     icon: Icon(
                       isSaved ? Icons.bookmark : Icons.bookmark_border,
-                      color: isSaved ? Colors.grey[700]: null,
+                      color: isSaved ? Colors.grey[700] : null,
                     ),
                     onPressed: () {
                       appState.toggleSavedPost(postId);
@@ -1081,12 +1142,14 @@ class PostDetailScreen extends StatelessWidget {
                           Row(
                             children: [
                               IconButton(
-                                icon: Icon(Icons.arrow_upward,
-                                    color: Provider.of<AppState>(context)
-                                                .userVotes[postId] ==
-                                            1
-                                        ? Colors.red
-                                        : null),
+                                icon: Icon(
+                                  Icons.arrow_upward,
+                                  color: Provider.of<AppState>(context)
+                                              .userVotes[postId] ==
+                                          1
+                                      ? Colors.red
+                                      : null,
+                                ),
                                 onPressed: () {
                                   Provider.of<AppState>(context, listen: false)
                                       .updatePostPoints(postId, 1);
@@ -1094,7 +1157,14 @@ class PostDetailScreen extends StatelessWidget {
                               ),
                               Text('${postData['points']}'),
                               IconButton(
-                                icon: Icon(Icons.arrow_downward),
+                                icon: Icon(
+                                  Icons.arrow_downward,
+                                  color: Provider.of<AppState>(context)
+                                              .userVotes[postId] ==
+                                          -1
+                                      ? Colors.red
+                                      : null,
+                                ),
                                 onPressed: () {
                                   Provider.of<AppState>(context, listen: false)
                                       .updatePostPoints(postId, -1);
@@ -1149,54 +1219,42 @@ class PostDetailScreen extends StatelessWidget {
   }
 
   Widget _buildUserInfo(Map<String, dynamic> postData) {
-    final userName = postData['userName'] as String?;
-    final emoji = postData['profileEmoji'] as String?;
-    final timestamp = postData['timestamp']?.toDate() ?? DateTime.now();
+    return FutureBuilder<DocumentSnapshot>(
+      future: FirebaseFirestore.instance.collection('users').doc(postData['userId']).get(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Text('Loading...');
+        }
+        if (snapshot.hasError || !snapshot.hasData) {
+          return Text('@[deleted]');
+        }
+        final userData = snapshot.data!.data() as Map<String, dynamic>?;
+        final userName = userData?['userName'] as String? ?? '';
+        final emoji = userData?['profileEmoji'] as String? ?? '🙂';
+        final timestamp = postData['timestamp']?.toDate() ?? DateTime.now();
 
-    if (userName == '[deleted]') {
-      return Row(
-        children: [
-          Text('🫥'),
-          SizedBox(width: 4),
-          Text(
-            '[deleted]',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
+        return Row(
+          children: [
+            Text(emoji),
+            SizedBox(width: 4),
+            Text(
+              userName.isEmpty ? '@anonymous' : '@$userName',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-          ),
-          SizedBox(width: 8),
-          Text(
-            getRelativeTime(timestamp),
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[600],
+            SizedBox(width: 8),
+            Text(
+              getRelativeTime(timestamp),
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+              ),
             ),
-          ),
-        ],
-      );
-    }
-
-    return Row(
-      children: [
-        Text(emoji ?? '🙂'),
-        SizedBox(width: 4),
-        Text(
-          userName == null || userName.isEmpty ? '@anonymous' : '@$userName',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        SizedBox(width: 8),
-        Text(
-          getRelativeTime(timestamp),
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[600],
-          ),
-        ),
-      ],
+          ],
+        );
+      },
     );
   }
 
@@ -1264,8 +1322,6 @@ class CommentList extends StatelessWidget {
               points: data['points'] ?? 0,
               timestamp: data['timestamp']?.toDate() ?? DateTime.now(),
               commentId: document.id,
-              userName: data['userName'] ?? '',
-              profileEmoji: data['profileEmoji'] ?? '🙂',
               userId: data['userId'] ?? '',
               postId: postId,
             );
@@ -1281,8 +1337,6 @@ class CommentCard extends StatelessWidget {
   final int points;
   final DateTime timestamp;
   final String commentId;
-  final String userName;
-  final String profileEmoji;
   final String userId;
   final String postId;
 
@@ -1292,8 +1346,6 @@ class CommentCard extends StatelessWidget {
     required this.points,
     required this.timestamp,
     required this.commentId,
-    required this.userName,
-    required this.profileEmoji,
     required this.userId,
     required this.postId,
   }) : super(key: key);
@@ -1313,7 +1365,38 @@ class CommentCard extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _buildUserInfo(),
+                FutureBuilder<DocumentSnapshot>(
+                  future: FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(userId)
+                      .get(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return Text('Loading...');
+                    }
+                    if (snapshot.hasError || !snapshot.hasData) {
+                      return Text('@[deleted]');
+                    }
+                    final userData =
+                        snapshot.data!.data() as Map<String, dynamic>?;
+                    final userName = userData?['userName'] as String? ?? '';
+                    final profileEmoji =
+                        userData?['profileEmoji'] as String? ?? '🙂';
+                    return Row(
+                      children: [
+                        Text(profileEmoji),
+                        SizedBox(width: 4),
+                        Text(
+                          userName.isEmpty ? '@anonymous' : '@$userName',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
                 if (userId == appState.userId)
                   IconButton(
                     icon: Icon(Icons.delete, size: 20),
@@ -1333,9 +1416,11 @@ class CommentCard extends StatelessWidget {
                 Row(
                   children: [
                     IconButton(
-                      icon: Icon(Icons.arrow_upward,
-                          size: 16,
-                          color: currentVote == 1 ? Colors.red : null),
+                      icon: Icon(
+                        Icons.arrow_upward,
+                        size: 16,
+                        color: currentVote == 1 ? Colors.red : null,
+                      ),
                       onPressed: () {
                         appState.updateCommentPoints(
                             commentId, currentVote == 1 ? -1 : 1);
@@ -1343,7 +1428,11 @@ class CommentCard extends StatelessWidget {
                     ),
                     Text('$points', style: TextStyle(fontSize: 12)),
                     IconButton(
-                      icon: Icon(Icons.arrow_downward, size: 16),
+                      icon: Icon(
+                        Icons.arrow_downward,
+                        size: 16,
+                        color: currentVote == -1 ? Colors.red : null,
+                      ),
                       onPressed: () {
                         appState.updateCommentPoints(
                             commentId, currentVote == -1 ? 1 : -1);
@@ -1363,22 +1452,6 @@ class CommentCard extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildUserInfo() {
-    return Row(
-      children: [
-        Text(profileEmoji),
-        SizedBox(width: 4),
-        Text(
-          userName.isEmpty ? '@anonymous' : '@$userName',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ],
     );
   }
 
@@ -1906,7 +1979,6 @@ class _ProfileScreenState extends State<ProfileScreen>
               timestamp: post['timestamp']?.toDate() ?? DateTime.now(),
               postId: posts[index].id,
               userId: post['userId'] ?? '',
-              userName: post['userName'] ?? '',
               profileEmoji: post['profileEmoji'] ?? '🙂',
             );
           },
@@ -2043,13 +2115,15 @@ class _ProfileScreenState extends State<ProfileScreen>
                       }
                       if (userSnapshot.hasError || !userSnapshot.hasData) {
                         print('Error loading user data: ${userSnapshot.error}');
-                        return Text('@anonymous');
+                        return Text('@[deleted]');
                       }
                       final userData =
                           userSnapshot.data!.data() as Map<String, dynamic>?;
                       final userName = userData?['userName'] as String?;
                       return Text(
-                        '@${userName?.isNotEmpty == true ? userName : 'anonymous'}',
+                        userName == null || userName.isEmpty
+                            ? '@[deleted]'
+                            : '@$userName',
                         style: TextStyle(
                           fontSize: 14,
                           color: Colors.grey[600],
@@ -2148,7 +2222,6 @@ class _ProfileScreenState extends State<ProfileScreen>
               timestamp: post['timestamp']?.toDate() ?? DateTime.now(),
               postId: savedPosts[index].id,
               userId: post['userId'] ?? '',
-              userName: post['userName'] ?? '',
               profileEmoji: post['profileEmoji'] ?? '🙂',
             );
           },
@@ -2193,8 +2266,8 @@ import 'profile_screen.dart';
 import 'settings_screen.dart';
 import 'app_state.dart';
 
-class ScuttlebuttApp extends StatelessWidget {
-  const ScuttlebuttApp({Key? key}) : super(key: key);
+class ScuttleApp extends StatelessWidget {
+  const ScuttleApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -2213,20 +2286,20 @@ class ScuttlebuttApp extends StatelessWidget {
             unselectedItemColor: Colors.grey,
           ),
         ),
-        home: ScuttlebuttHomePage(),
+        home: ScuttleHomePage(),
       ),
     );
   }
 }
 
-class ScuttlebuttHomePage extends StatefulWidget {
-  const ScuttlebuttHomePage({Key? key}) : super(key: key);
+class ScuttleHomePage extends StatefulWidget {
+  const ScuttleHomePage({Key? key}) : super(key: key);
 
   @override
-  _ScuttlebuttHomePageState createState() => _ScuttlebuttHomePageState();
+  _ScuttleHomePageState createState() => _ScuttleHomePageState();
 }
 
-class _ScuttlebuttHomePageState extends State<ScuttlebuttHomePage> {
+class _ScuttleHomePageState extends State<ScuttleHomePage> {
   int _selectedIndex = 0;
 
   final List<Widget> _widgetOptions = <Widget>[
@@ -2333,14 +2406,6 @@ class SettingsScreen extends StatelessWidget {
             },
           ),
           ListTile(
-            leading: Icon(Icons.description),
-            title: Text('Terms of Service'),
-            onTap: () {
-              // TODO: Show Terms of Service
-              print('Terms of Service tapped');
-            },
-          ),
-          ListTile(
             leading: Icon(Icons.people),
             title: Text('Community guidelines'),
             onTap: () {
@@ -2354,14 +2419,6 @@ class SettingsScreen extends StatelessWidget {
             onTap: () {
               // TODO: Implement bug reporting
               print('Report a bug tapped');
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.contact_support),
-            title: Text('Contact us'),
-            onTap: () {
-              // TODO: Implement contact functionality
-              print('Contact us tapped');
             },
           ),
           _buildSectionHeader('Account'),
@@ -2554,7 +2611,7 @@ File: app/ios/Runner/Info.plist
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
     <key>CFBundleDisplayName</key>
-    <string>Scuttlebutt</string>
+    <string>Scuttle</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
@@ -2562,7 +2619,7 @@ File: app/ios/Runner/Info.plist
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>Scuttlebutt</string>
+    <string>Scuttle</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
