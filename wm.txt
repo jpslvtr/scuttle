@@ -1,9 +1,14 @@
 Functionality > flow > look
 
-open -a Simulator
+git reset --hard [hash]
+
+open -a Simulator --args -CurrentDeviceUDID ED81B392-9986-4019-B71D-35FA08E3B179
+
 flutter run
 
 dart fix --dry-run
 dart fix --apply
 
+open app/ios/Runner.xcworkspace
 
+git push --force origin main

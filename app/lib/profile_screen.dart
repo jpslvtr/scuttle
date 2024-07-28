@@ -84,6 +84,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         return Padding(
           padding: const EdgeInsets.all(16.0),
           child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
                 decoration: BoxDecoration(
@@ -113,8 +114,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   Icons.edit,
                   size: 20.0,
                 ),
-                onPressed: () =>
-                    _showEditOptions(context, appState, userData),
+                onPressed: () => _showEditOptions(context, appState, userData),
               ),
             ],
           ),

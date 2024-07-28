@@ -1,5 +1,3 @@
-// File: app/lib/home_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
@@ -15,17 +13,24 @@ class HomeScreen extends StatelessWidget {
     final appState = Provider.of<AppState>(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text('Scuttlebutt'),
+        title: Text(appState.currentFeed),
         leading: Padding(
           padding: const EdgeInsets.all(8.0),
           child: Center(
-            child: Text(
-              '${appState.userPoints}',
-              style: TextStyle(
-                color: Colors.blue[800],
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-              ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.star, color: Colors.yellow[700], size: 18),
+                SizedBox(width: 2),
+                Text(
+                  '${appState.userPoints}',
+                  style: TextStyle(
+                    color: Colors.blue[800],
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
