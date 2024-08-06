@@ -114,7 +114,7 @@ class PostCard extends StatelessWidget {
                     children: [
                       IconButton(
                         icon: Icon(
-                          Icons.arrow_upward,
+                          Icons.arrow_upward_rounded,
                           color: appState.userVotes[postId] == 1
                               ? Colors.red
                               : null,
@@ -126,7 +126,7 @@ class PostCard extends StatelessWidget {
                       Text('$points'),
                       IconButton(
                         icon: Icon(
-                          Icons.arrow_downward,
+                          Icons.arrow_downward_rounded,
                           color: appState.userVotes[postId] == -1
                               ? Colors.red
                               : null,
@@ -196,16 +196,16 @@ String getRelativeTime(DateTime dateTime) {
   if (difference.inSeconds < 60) {
     return 'Now';
   } else if (difference.inMinutes < 60) {
-    return '${difference.inMinutes} min ago';
+    return '${difference.inMinutes} min';
   } else if (difference.inHours < 24) {
-    return '${difference.inHours} hr ago';
+    return '${difference.inHours} hr';
   } else if (difference.inDays < 30) {
-    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'} ago';
+    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'}';
   } else if (difference.inDays < 365) {
     final months = (difference.inDays / 30).floor();
-    return '$months month${months == 1 ? '' : 's'} ago';
+    return '$months month${months == 1 ? '' : 's'}';
   } else {
     final years = (difference.inDays / 365).floor();
-    return '$years year${years == 1 ? '' : 's'} ago';
+    return '$years year${years == 1 ? '' : 's'}';
   }
 }

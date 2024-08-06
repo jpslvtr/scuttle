@@ -1,8 +1,11 @@
+// File: app/lib/settings_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'app_state.dart';
 import 'login_screen.dart';
+import 'zone_selection_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -24,13 +27,6 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
             ),
-          ),
-          _buildSectionHeader('Feed'),
-          ListTile(
-            title: Text('Current Feed'),
-            subtitle: Text(appState.currentFeed),
-            trailing: Icon(Icons.arrow_forward_ios),
-            onTap: () => _showFeedSelectionDialog(context, appState),
           ),
           _buildSectionHeader('App'),
           ListTile(
@@ -68,11 +64,13 @@ class SettingsScreen extends StatelessWidget {
           ),
           _buildSectionHeader('Account'),
           ListTile(
-            leading: Icon(Icons.corporate_fare),
-            title: Text('Change commands'),
+            leading: Icon(Icons.location_city),
+            title: Text('Change Command'),
+            subtitle: Text(appState.command ?? 'Not set'),
             onTap: () {
-              // TODO: Implement change commands functionality
-              print('Change commands tapped');
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (context) => ZoneSelectionScreen()),
+              );
             },
           ),
           ListTile(
@@ -113,40 +111,6 @@ class SettingsScreen extends StatelessWidget {
           color: Colors.blue[800],
         ),
       ),
-    );
-  }
-
-  void _showFeedSelectionDialog(BuildContext context, AppState appState) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return SimpleDialog(
-          title: Text('Select Feed'),
-          children: <Widget>[
-            SimpleDialogOption(
-              onPressed: () {
-                appState.setCurrentFeed('All DOD');
-                Navigator.pop(context);
-              },
-              child: Text('All DOD'),
-            ),
-            SimpleDialogOption(
-              onPressed: () {
-                appState.setCurrentFeed('All Navy');
-                Navigator.pop(context);
-              },
-              child: Text('All Navy'),
-            ),
-            SimpleDialogOption(
-              onPressed: () {
-                appState.setCurrentFeed('My Command');
-                Navigator.pop(context);
-              },
-              child: Text('My Command'),
-            ),
-          ],
-        );
-      },
     );
   }
 

@@ -47,6 +47,10 @@
     <string>$(FLUTTER_BUILD_NUMBER)</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>This app needs access to location to recommend your command zone.</string>
+    <key>NSLocationAlwaysUsageDescription</key>
+    <string>This app needs access to location to recommend your command zone.</string>
     <key>UILaunchStoryboardName</key>
     <string>LaunchScreen</string>
     <key>UIMainStoryboardFile</key>

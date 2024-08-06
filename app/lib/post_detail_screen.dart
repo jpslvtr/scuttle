@@ -478,10 +478,10 @@ String getRelativeTime(DateTime dateTime) {
   if (difference.inSeconds < 60) {
     return 'Now';
   } else if (difference.inMinutes < 60) {
-    return '${difference.inMinutes} min ago';
+    return '${difference.inMinutes} min';
   } else if (difference.inHours < 24) {
-    return '${difference.inHours} hr ago';
+    return '${difference.inHours} hr';
   } else {
-    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'} ago';
+    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'}';
   }
 }

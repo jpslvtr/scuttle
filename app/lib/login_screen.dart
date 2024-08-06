@@ -6,6 +6,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
 import 'app_state.dart';
 import 'scuttlebutt_app.dart';
+import 'zone_selection_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -33,7 +34,13 @@ class _LoginScreenState extends State<LoginScreen> {
       if (user != null) {
         final appState = Provider.of<AppState>(context, listen: false);
         await appState.initializeUser(user.uid);
-        _navigateToHome();
+        if (appState.command == null) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (context) => ZoneSelectionScreen()),
+          );
+        } else {
+          _navigateToHome();
+        }
       }
     } catch (e) {
       print('Error during sign in: $e');

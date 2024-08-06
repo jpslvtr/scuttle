@@ -13,7 +13,7 @@ class AppState extends ChangeNotifier {
   List<String> savedPosts = [];
   Map<String, int> userVotes = {};
   Map<String, int> userCommentVotes = {};
-  String currentFeed = 'All DOD';
+  String currentFeed = 'All Navy';
   int userPoints = 0; // Placeholder for user points
 
   AppState({this.userId, this.command, this.userName});
@@ -70,7 +70,7 @@ class AppState extends ChangeNotifier {
     savedPosts.clear();
     userVotes.clear();
     userCommentVotes.clear();
-    currentFeed = 'All DOD';
+    currentFeed = 'All Navy';
     userPoints = 0;
     notifyListeners();
   }
@@ -92,13 +92,15 @@ class AppState extends ChangeNotifier {
   Future<void> createPost(String title, String content, String feed) async {
     if (userId == null) return;
 
+    String postFeed = feed == 'All Navy' ? 'Navy' : feed;
+
     await FirebaseFirestore.instance.collection('posts').add({
       'title': title,
       'content': content,
       'userId': userId,
       'userName': userName,
       'command': command,
-      'feed': feed,
+      'feed': postFeed,
       'points': 0,
       'commentCount': 0,
       'timestamp': FieldValue.serverTimestamp(),
@@ -121,23 +123,23 @@ class AppState extends ChangeNotifier {
       DocumentReference postRef =
           FirebaseFirestore.instance.collection('posts').doc(postId);
 
-      int currentVote = userVotes[postId] ?? 0;
-      int newVote = 0;
-
-      if (currentVote == delta) {
-        // If the user clicks the same vote button again, remove the vote
-        newVote = 0;
-        delta = -currentVote;
-      } else {
-        // Otherwise, update the vote
-        newVote = delta;
-        delta = newVote - currentVote;
-      }
-
       await FirebaseFirestore.instance.runTransaction((transaction) async {
         DocumentSnapshot freshPost = await transaction.get(postRef);
         if (!freshPost.exists) {
           throw Exception('Post does not exist!');
+        }
+
+        int currentVote = userVotes[postId] ?? 0;
+        int newVote;
+
+        if (currentVote == delta) {
+          // If the user clicks the same vote button again, remove the vote
+          newVote = 0;
+          delta = -currentVote;
+        } else {
+          // Otherwise, update the vote
+          newVote = delta;
+          delta = newVote - currentVote;
         }
 
         int oldPoints = freshPost.get('points') as int;
@@ -148,12 +150,57 @@ class AppState extends ChangeNotifier {
         DocumentReference userRef =
             FirebaseFirestore.instance.collection('users').doc(userId);
         transaction.update(userRef, {'votes.$postId': newVote});
+
+        userVotes[postId] = newVote;
       });
 
-      userVotes[postId] = newVote;
       notifyListeners();
     } catch (e) {
       print('Error updating post points: $e');
+    }
+  }
+
+  Future<void> updateCommentPoints(String commentId, int delta) async {
+    if (userId == null) return;
+
+    try {
+      DocumentReference commentRef =
+          FirebaseFirestore.instance.collection('comments').doc(commentId);
+
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        DocumentSnapshot freshComment = await transaction.get(commentRef);
+        if (!freshComment.exists) {
+          throw Exception('Comment does not exist!');
+        }
+
+        int currentVote = userCommentVotes[commentId] ?? 0;
+        int newVote;
+
+        if (currentVote == delta) {
+          // If the user clicks the same vote button again, remove the vote
+          newVote = 0;
+          delta = -currentVote;
+        } else {
+          // Otherwise, update the vote
+          newVote = delta;
+          delta = newVote - currentVote;
+        }
+
+        int oldPoints = freshComment.get('points') as int;
+        int newPoints = oldPoints + delta;
+
+        transaction.update(commentRef, {'points': newPoints});
+
+        DocumentReference userRef =
+            FirebaseFirestore.instance.collection('users').doc(userId);
+        transaction.update(userRef, {'commentVotes.$commentId': newVote});
+
+        userCommentVotes[commentId] = newVote;
+      });
+
+      notifyListeners();
+    } catch (e) {
+      print('Error updating comment points: $e');
     }
   }
 
@@ -183,44 +230,6 @@ class AppState extends ChangeNotifier {
     });
 
     notifyListeners();
-  }
-
-  Future<void> updateCommentPoints(String commentId, int delta) async {
-    if (userId == null) return;
-
-    try {
-      DocumentReference commentRef =
-          FirebaseFirestore.instance.collection('comments').doc(commentId);
-
-      int currentVote = userCommentVotes[commentId] ?? 0;
-      int newVote = currentVote + delta;
-
-      if (newVote.abs() > 1) {
-        print('Cannot vote more than once in each direction');
-        return;
-      }
-
-      await FirebaseFirestore.instance.runTransaction((transaction) async {
-        DocumentSnapshot freshComment = await transaction.get(commentRef);
-        if (!freshComment.exists) {
-          throw Exception('Comment does not exist!');
-        }
-
-        int oldPoints = freshComment.get('points') as int;
-        int newPoints = oldPoints + (newVote - currentVote);
-
-        transaction.update(commentRef, {'points': newPoints});
-
-        DocumentReference userRef =
-            FirebaseFirestore.instance.collection('users').doc(userId);
-        transaction.update(userRef, {'commentVotes.$commentId': newVote});
-      });
-
-      userCommentVotes[commentId] = newVote;
-      notifyListeners();
-    } catch (e) {
-      print('Error updating comment points: $e');
-    }
   }
 
   Future<void> deleteAccount() async {
@@ -492,6 +501,7 @@ File: app/lib/home_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
+import 'dart:math';
 import 'app_state.dart';
 import 'post_card.dart';
 import 'post_screen.dart';
@@ -504,7 +514,6 @@ class HomeScreen extends StatelessWidget {
     final appState = Provider.of<AppState>(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text(appState.currentFeed),
         leading: Padding(
           padding: const EdgeInsets.all(8.0),
           child: Center(
@@ -525,13 +534,51 @@ class HomeScreen extends StatelessWidget {
             ),
           ),
         ),
+        title: Padding(
+          padding: EdgeInsets.only(right: 40),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              PopupMenuButton<String>(
+                initialValue: appState.currentFeed,
+                onSelected: (String newValue) {
+                  appState.setCurrentFeed(newValue);
+                },
+                itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                  PopupMenuItem<String>(
+                    value: 'All Navy',
+                    child: Text('All Navy'),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'My Command',
+                    child: Text('My Command'),
+                  ),
+                ],
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.arrow_drop_down, color: Colors.blue[800]),
+                    Text(
+                      appState.currentFeed,
+                      style: TextStyle(
+                        color: Colors.blue[800],
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
         actions: [
           Container(
             margin: EdgeInsets.only(right: 10),
             child: ElevatedButton(
               child: Icon(Icons.add, color: Colors.white),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue[800]?.withOpacity(0.8),
+                backgroundColor: Colors.blue[800],
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -569,8 +616,8 @@ class HomeScreen extends StatelessWidget {
               Expanded(
                 child: TabBarView(
                   children: [
-                    PostFeed(feedType: appState.currentFeed),
-                    PostFeed(feedType: 'My Command'),
+                    PostFeed(feedType: appState.currentFeed, sortBy: 'top'),
+                    PostFeed(feedType: appState.currentFeed, sortBy: 'recent'),
                   ],
                 ),
               ),
@@ -584,31 +631,18 @@ class HomeScreen extends StatelessWidget {
 
 class PostFeed extends StatelessWidget {
   final String feedType;
+  final String sortBy;
 
-  const PostFeed({Key? key, required this.feedType}) : super(key: key);
+  const PostFeed({Key? key, required this.feedType, required this.sortBy})
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final appState = Provider.of<AppState>(context);
-    final currentFeed =
-        feedType == 'My Command' ? appState.command : appState.currentFeed;
-
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('posts')
-          .where('feed', isEqualTo: currentFeed)
-          .orderBy('timestamp', descending: true)
-          .snapshots(),
+      stream: _getPostStream(feedType, sortBy),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           print('Error in PostFeed: ${snapshot.error}');
-          print('Error details:');
-          print(snapshot.error.toString());
-          if (snapshot.error is FirebaseException) {
-            FirebaseException e = snapshot.error as FirebaseException;
-            print('Firebase Exception Code: ${e.code}');
-            print('Firebase Exception Message: ${e.message}');
-          }
           return Center(child: Text('Error: ${snapshot.error}'));
         }
 
@@ -616,23 +650,86 @@ class PostFeed extends StatelessWidget {
           return Center(child: CircularProgressIndicator());
         }
 
+        final posts = snapshot.data!.docs;
+        if (sortBy == 'top') {
+          posts
+              .sort((a, b) => _calculateScore(b).compareTo(_calculateScore(a)));
+        }
+
         return ListView(
-          children: snapshot.data!.docs.map((DocumentSnapshot document) {
+          children: posts.map((DocumentSnapshot document) {
             Map<String, dynamic> data = document.data() as Map<String, dynamic>;
-            return PostCard(
-              title: data['title'] ?? '',
-              content: data['content'] ?? '',
-              points: data['points'] ?? 0,
-              commentCount: data['commentCount'] ?? 0,
-              timestamp: data['timestamp']?.toDate() ?? DateTime.now(),
-              postId: document.id,
-              userId: data['userId'] ?? '',
-              profileEmoji: data['profileEmoji'] ?? '🙂',
+            return FutureBuilder<DocumentSnapshot>(
+              future: FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(data['userId'])
+                  .get(),
+              builder: (context, userSnapshot) {
+                String userName = '@[deleted]';
+                String profileEmoji = '🫥';
+                if (userSnapshot.connectionState == ConnectionState.done &&
+                    userSnapshot.hasData) {
+                  final userData =
+                      userSnapshot.data!.data() as Map<String, dynamic>?;
+                  userName = userData?['userName'] as String? ?? '';
+                  profileEmoji = userData?['profileEmoji'] as String? ?? '🫥';
+                  if (userName.isEmpty) {
+                    userName = '@[deleted]';
+                  } else {
+                    userName = '@$userName';
+                  }
+                }
+                return PostCard(
+                  title: data['title'] ?? '',
+                  content: data['content'] ?? '',
+                  points: data['points'] ?? 0,
+                  commentCount: data['commentCount'] ?? 0,
+                  timestamp: data['timestamp']?.toDate() ?? DateTime.now(),
+                  postId: document.id,
+                  userId: data['userId'] ?? '',
+                  profileEmoji: profileEmoji,
+                  userName: userName,
+                );
+              },
             );
           }).toList(),
         );
       },
     );
+  }
+
+  Stream<QuerySnapshot> _getPostStream(String currentFeed, String sortBy) {
+    Query query;
+    if (currentFeed == 'All Navy') {
+      query = FirebaseFirestore.instance.collection('posts');
+    } else {
+      query = FirebaseFirestore.instance
+          .collection('posts')
+          .where('feed', isEqualTo: currentFeed);
+    }
+
+    if (sortBy == 'top') {
+      return query
+          .orderBy('timestamp', descending: true)
+          .limit(100)
+          .snapshots();
+    } else {
+      return query.orderBy('timestamp', descending: true).limit(50).snapshots();
+    }
+  }
+
+  double _calculateScore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    final points = data['points'] as int? ?? 0;
+    final commentCount = data['commentCount'] as int? ?? 0;
+    final timestamp = data['timestamp'] as Timestamp?;
+
+    if (timestamp == null) return 0;
+
+    final ageInHours = DateTime.now().difference(timestamp.toDate()).inHours;
+    final gravity = 1.8;
+
+    return (points + (commentCount * 0.5)) / pow((ageInHours + 2), gravity);
   }
 }
 
@@ -851,6 +948,7 @@ class PostCard extends StatelessWidget {
   final String postId;
   final String userId;
   final String profileEmoji;
+  final String userName;
   final bool isDetailView;
 
   const PostCard({
@@ -863,6 +961,7 @@ class PostCard extends StatelessWidget {
     required this.postId,
     required this.userId,
     required this.profileEmoji,
+    required this.userName,
     this.isDetailView = false,
   }) : super(key: key);
 
@@ -894,44 +993,26 @@ class PostCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Expanded(
-                    child: FutureBuilder<DocumentSnapshot>(
-                      future: FirebaseFirestore.instance
-                          .collection('users')
-                          .doc(userId)
-                          .get(),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return Text('Loading...');
-                        }
-                        if (snapshot.hasError || !snapshot.hasData) {
-                          return Text('@[deleted]');
-                        }
-                        final userData =
-                            snapshot.data!.data() as Map<String, dynamic>?;
-                        final userName = userData?['userName'] as String? ?? '';
-                        return Row(
-                          children: [
-                            Text(profileEmoji),
-                            SizedBox(width: 4),
-                            Text(
-                              userName.isEmpty ? '@anonymous' : '@$userName',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            SizedBox(width: 8),
-                            Text(
-                              getRelativeTime(timestamp),
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ],
-                        );
-                      },
+                    child: Row(
+                      children: [
+                        Text(profileEmoji),
+                        SizedBox(width: 4),
+                        Text(
+                          userName,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          getRelativeTime(timestamp),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   if (isCreator && !isDetailView)
@@ -966,7 +1047,7 @@ class PostCard extends StatelessWidget {
                     children: [
                       IconButton(
                         icon: Icon(
-                          Icons.arrow_upward,
+                          Icons.arrow_upward_rounded,
                           color: appState.userVotes[postId] == 1
                               ? Colors.red
                               : null,
@@ -978,7 +1059,7 @@ class PostCard extends StatelessWidget {
                       Text('$points'),
                       IconButton(
                         icon: Icon(
-                          Icons.arrow_downward,
+                          Icons.arrow_downward_rounded,
                           color: appState.userVotes[postId] == -1
                               ? Colors.red
                               : null,
@@ -1048,17 +1129,17 @@ String getRelativeTime(DateTime dateTime) {
   if (difference.inSeconds < 60) {
     return 'Now';
   } else if (difference.inMinutes < 60) {
-    return '${difference.inMinutes} min ago';
+    return '${difference.inMinutes} min';
   } else if (difference.inHours < 24) {
-    return '${difference.inHours} hr ago';
+    return '${difference.inHours} hr';
   } else if (difference.inDays < 30) {
-    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'} ago';
+    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'}';
   } else if (difference.inDays < 365) {
     final months = (difference.inDays / 30).floor();
-    return '$months month${months == 1 ? '' : 's'} ago';
+    return '$months month${months == 1 ? '' : 's'}';
   } else {
     final years = (difference.inDays / 365).floor();
-    return '$years year${years == 1 ? '' : 's'} ago';
+    return '$years year${years == 1 ? '' : 's'}';
   }
 }
 
@@ -1220,7 +1301,10 @@ class PostDetailScreen extends StatelessWidget {
 
   Widget _buildUserInfo(Map<String, dynamic> postData) {
     return FutureBuilder<DocumentSnapshot>(
-      future: FirebaseFirestore.instance.collection('users').doc(postData['userId']).get(),
+      future: FirebaseFirestore.instance
+          .collection('users')
+          .doc(postData['userId'])
+          .get(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Text('Loading...');
@@ -1238,7 +1322,7 @@ class PostDetailScreen extends StatelessWidget {
             Text(emoji),
             SizedBox(width: 4),
             Text(
-              userName.isEmpty ? '@anonymous' : '@$userName',
+              userName.isEmpty ? '@[deleted]' : '@$userName',
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.bold,
@@ -1387,7 +1471,7 @@ class CommentCard extends StatelessWidget {
                         Text(profileEmoji),
                         SizedBox(width: 4),
                         Text(
-                          userName.isEmpty ? '@anonymous' : '@$userName',
+                          userName.isEmpty ? '@[deleted]' : '@$userName',
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
@@ -1543,11 +1627,11 @@ String getRelativeTime(DateTime dateTime) {
   if (difference.inSeconds < 60) {
     return 'Now';
   } else if (difference.inMinutes < 60) {
-    return '${difference.inMinutes} min ago';
+    return '${difference.inMinutes} min';
   } else if (difference.inHours < 24) {
-    return '${difference.inHours} hr ago';
+    return '${difference.inHours} hr';
   } else {
-    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'} ago';
+    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'}';
   }
 }
 
@@ -1825,26 +1909,8 @@ class _ProfileScreenState extends State<ProfileScreen>
           content: Wrap(
             spacing: 10,
             children: [
-              '🙂',
-              '🙃',
-              '😐',
-              '😬',
-              '🥲',
-              '🤔',
-              '🤷',
-              '🤷‍♀️',
-              '🫡',
-              '😳',
-              '🫣',
-              '🙄',
-              '🧐',
-              '😴',
-              '😎',
-              '🫨',
-              '💀',
-              '🤡',
-              '🥸',
-              '👾'
+              '🙂', '🙃', '😐', '😬', '🥲', '🤔', '🤷', '🤷‍♀️', '🫡', '😳',
+              '🫣', '🙄', '🧐', '😴', '😎', '🫨', '💀', '🤡', '🥸', '👾'
             ]
                 .map((emoji) => GestureDetector(
                       onTap: () {
@@ -1980,6 +2046,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               postId: posts[index].id,
               userId: post['userId'] ?? '',
               profileEmoji: post['profileEmoji'] ?? '🙂',
+              userName: '@${post['userName'] ?? 'anonymous'}',
             );
           },
         );
@@ -2214,15 +2281,38 @@ class _ProfileScreenState extends State<ProfileScreen>
             if (post == null) {
               return SizedBox.shrink();
             }
-            return PostCard(
-              title: post['title'] ?? '',
-              content: post['content'] ?? '',
-              points: post['points'] ?? 0,
-              commentCount: post['commentCount'] ?? 0,
-              timestamp: post['timestamp']?.toDate() ?? DateTime.now(),
-              postId: savedPosts[index].id,
-              userId: post['userId'] ?? '',
-              profileEmoji: post['profileEmoji'] ?? '🙂',
+            return FutureBuilder<DocumentSnapshot>(
+              future: FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(post['userId'])
+                  .get(),
+              builder: (context, userSnapshot) {
+                String userName = '@[deleted]';
+                String profileEmoji = '🫥';
+                if (userSnapshot.connectionState == ConnectionState.done &&
+                    userSnapshot.hasData) {
+                  final userData =
+                      userSnapshot.data!.data() as Map<String, dynamic>?;
+                  userName = userData?['userName'] as String? ?? '';
+                  profileEmoji = userData?['profileEmoji'] as String? ?? '🫥';
+                  if (userName.isEmpty) {
+                    userName = '@[deleted]';
+                  } else {
+                    userName = '@$userName';
+                  }
+                }
+                return PostCard(
+                  title: post['title'] ?? '',
+                  content: post['content'] ?? '',
+                  points: post['points'] ?? 0,
+                  commentCount: post['commentCount'] ?? 0,
+                  timestamp: post['timestamp']?.toDate() ?? DateTime.now(),
+                  postId: savedPosts[index].id,
+                  userId: post['userId'] ?? '',
+                  profileEmoji: profileEmoji,
+                  userName: userName,
+                );
+              },
             );
           },
         );
@@ -2238,17 +2328,17 @@ String getRelativeTime(DateTime dateTime) {
   if (difference.inSeconds < 60) {
     return 'Now';
   } else if (difference.inMinutes < 60) {
-    return '${difference.inMinutes} min ago';
+    return '${difference.inMinutes} min';
   } else if (difference.inHours < 24) {
-    return '${difference.inHours} hr ago';
+    return '${difference.inHours} hr';
   } else if (difference.inDays < 30) {
-    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'} ago';
+    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'}';
   } else if (difference.inDays < 365) {
     final months = (difference.inDays / 30).floor();
-    return '$months month${months == 1 ? '' : 's'} ago';
+    return '$months month${months == 1 ? '' : 's'}';
   } else {
     final years = (difference.inDays / 365).floor();
-    return '$years year${years == 1 ? '' : 's'} ago';
+    return '$years year${years == 1 ? '' : 's'}';
   }
 }
 
@@ -2380,13 +2470,6 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
           ),
-          _buildSectionHeader('Feed'),
-          ListTile(
-            title: Text('Current Feed'),
-            subtitle: Text(appState.currentFeed),
-            trailing: Icon(Icons.arrow_forward_ios),
-            onTap: () => _showFeedSelectionDialog(context, appState),
-          ),
           _buildSectionHeader('App'),
           ListTile(
             leading: Icon(Icons.notifications),
@@ -2468,40 +2551,6 @@ class SettingsScreen extends StatelessWidget {
           color: Colors.blue[800],
         ),
       ),
-    );
-  }
-
-  void _showFeedSelectionDialog(BuildContext context, AppState appState) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return SimpleDialog(
-          title: Text('Select Feed'),
-          children: <Widget>[
-            SimpleDialogOption(
-              onPressed: () {
-                appState.setCurrentFeed('All DOD');
-                Navigator.pop(context);
-              },
-              child: Text('All DOD'),
-            ),
-            SimpleDialogOption(
-              onPressed: () {
-                appState.setCurrentFeed('All Navy');
-                Navigator.pop(context);
-              },
-              child: Text('All Navy'),
-            ),
-            SimpleDialogOption(
-              onPressed: () {
-                appState.setCurrentFeed('My Command');
-                Navigator.pop(context);
-              },
-              child: Text('My Command'),
-            ),
-          ],
-        );
-      },
     );
   }
 
@@ -2790,7 +2839,7 @@ service cloud.firestore {
       allow create: if request.auth != null;
       allow update: if request.auth != null && 
                     (resource.data.userId == request.auth.uid || 
-                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points', 'commentCount', 'userName', 'profileEmoji']));
+                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points']));
       allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
     }
     
@@ -2799,7 +2848,7 @@ service cloud.firestore {
       allow create: if request.auth != null;
       allow update: if request.auth != null && 
                     (resource.data.userId == request.auth.uid || 
-                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points', 'userName', 'profileEmoji']));
+                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points']));
       allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
     }
   }

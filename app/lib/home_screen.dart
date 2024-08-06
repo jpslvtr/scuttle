@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
+import 'dart:math';
 import 'app_state.dart';
 import 'post_card.dart';
 import 'post_screen.dart';
@@ -15,7 +16,6 @@ class HomeScreen extends StatelessWidget {
     final appState = Provider.of<AppState>(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text(appState.currentFeed),
         leading: Padding(
           padding: const EdgeInsets.all(8.0),
           child: Center(
@@ -36,13 +36,52 @@ class HomeScreen extends StatelessWidget {
             ),
           ),
         ),
+        title: Padding(
+          padding: EdgeInsets.only(right: 40),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              PopupMenuButton<String>(
+                initialValue: appState.currentFeed,
+                onSelected: (String newValue) {
+                  appState.setCurrentFeed(newValue);
+                },
+                itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                  PopupMenuItem<String>(
+                    value: 'All Navy',
+                    child: Text('All Navy'),
+                  ),
+                  if (appState.command != null)
+                    PopupMenuItem<String>(
+                      value: appState.command!,
+                      child: Text(appState.command!),
+                    ),
+                ],
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.arrow_drop_down, color: Colors.blue[800]),
+                    Text(
+                      appState.currentFeed,
+                      style: TextStyle(
+                        color: Colors.blue[800],
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
         actions: [
           Container(
             margin: EdgeInsets.only(right: 10),
             child: ElevatedButton(
               child: Icon(Icons.add, color: Colors.white),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue[800]?.withOpacity(0.8),
+                backgroundColor: Colors.blue[800],
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -80,9 +119,8 @@ class HomeScreen extends StatelessWidget {
               Expanded(
                 child: TabBarView(
                   children: [
-                    PostFeed(feedType: appState.currentFeed, sortBy: 'points'),
-                    PostFeed(
-                        feedType: appState.currentFeed, sortBy: 'timestamp'),
+                    PostFeed(feedType: appState.currentFeed, sortBy: 'top'),
+                    PostFeed(feedType: appState.currentFeed, sortBy: 'recent'),
                   ],
                 ),
               ),
@@ -103,25 +141,11 @@ class PostFeed extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final appState = Provider.of<AppState>(context);
-    final currentFeed = feedType == 'My Command' ? appState.command : feedType;
-
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('posts')
-          .where('feed', isEqualTo: currentFeed)
-          .orderBy(sortBy, descending: true)
-          .snapshots(),
+      stream: _getPostStream(feedType, sortBy),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           print('Error in PostFeed: ${snapshot.error}');
-          print('Error details:');
-          print(snapshot.error.toString());
-          if (snapshot.error is FirebaseException) {
-            FirebaseException e = snapshot.error as FirebaseException;
-            print('Firebase Exception Code: ${e.code}');
-            print('Firebase Exception Message: ${e.message}');
-          }
           return Center(child: Text('Error: ${snapshot.error}'));
         }
 
@@ -129,8 +153,14 @@ class PostFeed extends StatelessWidget {
           return Center(child: CircularProgressIndicator());
         }
 
+        final posts = snapshot.data!.docs;
+        if (sortBy == 'top') {
+          posts
+              .sort((a, b) => _calculateScore(b).compareTo(_calculateScore(a)));
+        }
+
         return ListView(
-          children: snapshot.data!.docs.map((DocumentSnapshot document) {
+          children: posts.map((DocumentSnapshot document) {
             Map<String, dynamic> data = document.data() as Map<String, dynamic>;
             return FutureBuilder<DocumentSnapshot>(
               future: FirebaseFirestore.instance
@@ -169,5 +199,39 @@ class PostFeed extends StatelessWidget {
         );
       },
     );
+  }
+
+  Stream<QuerySnapshot> _getPostStream(String currentFeed, String sortBy) {
+    Query query;
+    if (currentFeed == 'All Navy') {
+      query = FirebaseFirestore.instance.collection('posts');
+    } else {
+      query = FirebaseFirestore.instance
+          .collection('posts')
+          .where('feed', isEqualTo: currentFeed);
+    }
+
+    if (sortBy == 'top') {
+      return query
+          .orderBy('timestamp', descending: true)
+          .limit(100)
+          .snapshots();
+    } else {
+      return query.orderBy('timestamp', descending: true).limit(50).snapshots();
+    }
+  }
+
+  double _calculateScore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    final points = data['points'] as int? ?? 0;
+    final commentCount = data['commentCount'] as int? ?? 0;
+    final timestamp = data['timestamp'] as Timestamp?;
+
+    if (timestamp == null) return 0;
+
+    final ageInHours = DateTime.now().difference(timestamp.toDate()).inHours;
+    final gravity = 1.8;
+
+    return (points + (commentCount * 0.5)) / pow((ageInHours + 2), gravity);
   }
 }

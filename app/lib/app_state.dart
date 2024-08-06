@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:geolocator/geolocator.dart';
 
 class AppState extends ChangeNotifier {
   String? userId;
@@ -11,8 +12,44 @@ class AppState extends ChangeNotifier {
   List<String> savedPosts = [];
   Map<String, int> userVotes = {};
   Map<String, int> userCommentVotes = {};
-  String currentFeed = 'All DOD';
-  int userPoints = 0; // Placeholder for user points
+  String currentFeed = 'All Navy';
+  int userPoints = 0;
+  Position? userLocation;
+
+  static const Map<String, Map<String, dynamic>> zones = {
+    'Norfolk': {
+      'center': {'lat': 36.8508, 'lng': -76.2859},
+      'radius': 120700
+    },
+    'San Diego': {
+      'center': {'lat': 32.7157, 'lng': -117.1611},
+      'radius': 160934
+    },
+    'Jacksonville': {
+      'center': {'lat': 30.3322, 'lng': -81.6557},
+      'radius': 120700
+    },
+    'Pensacola': {
+      'center': {'lat': 30.4213, 'lng': -87.2169},
+      'radius': 160934
+    },
+    'Pacific Northwest': {
+      'center': {'lat': 47.6062, 'lng': -122.3321},
+      'radius': 160934
+    },
+    'Japan': {
+      'center': {'lat': 35.6762, 'lng': 139.6503},
+      'radius': 804672
+    },
+    'Hawaii': {
+      'center': {'lat': 21.3069, 'lng': -157.8583},
+      'radius': 321869
+    },
+    'National Capital Region': {
+      'center': {'lat': 38.9072, 'lng': -77.0369},
+      'radius': 160934
+    },
+  };
 
   AppState({this.userId, this.command, this.userName});
 
@@ -29,7 +66,7 @@ class AppState extends ChangeNotifier {
         userVotes = Map<String, int>.from(userData['votes'] ?? {});
         userCommentVotes =
             Map<String, int>.from(userData['commentVotes'] ?? {});
-        userPoints = userData['points'] as int? ?? 0; // Initialize user points
+        userPoints = userData['points'] as int? ?? 0;
       } else {
         await createUserDocument(uid);
       }
@@ -49,13 +86,61 @@ class AppState extends ChangeNotifier {
         'userName': '',
         'votes': {},
         'commentVotes': {},
-        'points': 0, // Initialize user points
+        'points': 0,
+        'command': null,
       }, SetOptions(merge: true));
     } catch (e) {
       print('Error creating user document: $e');
     }
   }
 
+  Future<void> setUserLocation(Position position) async {
+    userLocation = position;
+    notifyListeners();
+  }
+
+  Future<void> setUserCommand(String newCommand) async {
+    command = newCommand;
+    currentFeed = newCommand;
+    
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .update({'command': newCommand});
+      notifyListeners();
+    } catch (e) {
+      print('Error updating user command: $e');
+    }
+  }
+
+  String? getRecommendedZone() {
+    if (userLocation == null) return null;
+
+    String? closestZone;
+    double minDistance = double.infinity;
+
+    for (var entry in zones.entries) {
+      var zone = entry.value;
+      var center = zone['center'];
+      var zoneRadius = zone['radius'];
+
+      double distance = Geolocator.distanceBetween(
+        userLocation!.latitude,
+        userLocation!.longitude,
+        center['lat'],
+        center['lng'],
+      );
+
+      if (distance < minDistance && distance <= zoneRadius) {
+        minDistance = distance;
+        closestZone = entry.key;
+      }
+    }
+
+    return closestZone;
+  }
+  
   void setCurrentFeed(String feed) {
     currentFeed = feed;
     notifyListeners();
@@ -68,7 +153,7 @@ class AppState extends ChangeNotifier {
     savedPosts.clear();
     userVotes.clear();
     userCommentVotes.clear();
-    currentFeed = 'All DOD';
+    currentFeed = 'All Navy';
     userPoints = 0;
     notifyListeners();
   }
@@ -90,13 +175,15 @@ class AppState extends ChangeNotifier {
   Future<void> createPost(String title, String content, String feed) async {
     if (userId == null) return;
 
+    String postFeed = feed == 'All Navy' ? 'Navy' : feed;
+
     await FirebaseFirestore.instance.collection('posts').add({
       'title': title,
       'content': content,
       'userId': userId,
       'userName': userName,
       'command': command,
-      'feed': feed,
+      'feed': postFeed,
       'points': 0,
       'commentCount': 0,
       'timestamp': FieldValue.serverTimestamp(),
@@ -119,23 +206,23 @@ class AppState extends ChangeNotifier {
       DocumentReference postRef =
           FirebaseFirestore.instance.collection('posts').doc(postId);
 
-      int currentVote = userVotes[postId] ?? 0;
-      int newVote = 0;
-
-      if (currentVote == delta) {
-        // If the user clicks the same vote button again, remove the vote
-        newVote = 0;
-        delta = -currentVote;
-      } else {
-        // Otherwise, update the vote
-        newVote = delta;
-        delta = newVote - currentVote;
-      }
-
       await FirebaseFirestore.instance.runTransaction((transaction) async {
         DocumentSnapshot freshPost = await transaction.get(postRef);
         if (!freshPost.exists) {
           throw Exception('Post does not exist!');
+        }
+
+        int currentVote = userVotes[postId] ?? 0;
+        int newVote;
+
+        if (currentVote == delta) {
+          // If the user clicks the same vote button again, remove the vote
+          newVote = 0;
+          delta = -currentVote;
+        } else {
+          // Otherwise, update the vote
+          newVote = delta;
+          delta = newVote - currentVote;
         }
 
         int oldPoints = freshPost.get('points') as int;
@@ -146,12 +233,57 @@ class AppState extends ChangeNotifier {
         DocumentReference userRef =
             FirebaseFirestore.instance.collection('users').doc(userId);
         transaction.update(userRef, {'votes.$postId': newVote});
+
+        userVotes[postId] = newVote;
       });
 
-      userVotes[postId] = newVote;
       notifyListeners();
     } catch (e) {
       print('Error updating post points: $e');
+    }
+  }
+
+  Future<void> updateCommentPoints(String commentId, int delta) async {
+    if (userId == null) return;
+
+    try {
+      DocumentReference commentRef =
+          FirebaseFirestore.instance.collection('comments').doc(commentId);
+
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        DocumentSnapshot freshComment = await transaction.get(commentRef);
+        if (!freshComment.exists) {
+          throw Exception('Comment does not exist!');
+        }
+
+        int currentVote = userCommentVotes[commentId] ?? 0;
+        int newVote;
+
+        if (currentVote == delta) {
+          // If the user clicks the same vote button again, remove the vote
+          newVote = 0;
+          delta = -currentVote;
+        } else {
+          // Otherwise, update the vote
+          newVote = delta;
+          delta = newVote - currentVote;
+        }
+
+        int oldPoints = freshComment.get('points') as int;
+        int newPoints = oldPoints + delta;
+
+        transaction.update(commentRef, {'points': newPoints});
+
+        DocumentReference userRef =
+            FirebaseFirestore.instance.collection('users').doc(userId);
+        transaction.update(userRef, {'commentVotes.$commentId': newVote});
+
+        userCommentVotes[commentId] = newVote;
+      });
+
+      notifyListeners();
+    } catch (e) {
+      print('Error updating comment points: $e');
     }
   }
 
@@ -181,44 +313,6 @@ class AppState extends ChangeNotifier {
     });
 
     notifyListeners();
-  }
-
-  Future<void> updateCommentPoints(String commentId, int delta) async {
-    if (userId == null) return;
-
-    try {
-      DocumentReference commentRef =
-          FirebaseFirestore.instance.collection('comments').doc(commentId);
-
-      int currentVote = userCommentVotes[commentId] ?? 0;
-      int newVote = currentVote + delta;
-
-      if (newVote.abs() > 1) {
-        print('Cannot vote more than once in each direction');
-        return;
-      }
-
-      await FirebaseFirestore.instance.runTransaction((transaction) async {
-        DocumentSnapshot freshComment = await transaction.get(commentRef);
-        if (!freshComment.exists) {
-          throw Exception('Comment does not exist!');
-        }
-
-        int oldPoints = freshComment.get('points') as int;
-        int newPoints = oldPoints + (newVote - currentVote);
-
-        transaction.update(commentRef, {'points': newPoints});
-
-        DocumentReference userRef =
-            FirebaseFirestore.instance.collection('users').doc(userId);
-        transaction.update(userRef, {'commentVotes.$commentId': newVote});
-      });
-
-      userCommentVotes[commentId] = newVote;
-      notifyListeners();
-    } catch (e) {
-      print('Error updating comment points: $e');
-    }
   }
 
   Future<void> deleteAccount() async {
