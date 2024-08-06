@@ -36,7 +36,9 @@ class _LoginScreenState extends State<LoginScreen> {
         await appState.initializeUser(user.uid);
         if (appState.command == null) {
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => ZoneSelectionScreen()),
+            MaterialPageRoute(
+                builder: (context) =>
+                    ZoneSelectionScreen(isInitialSetup: true)),
           );
         } else {
           _navigateToHome();

@@ -17,6 +17,10 @@ class AppState extends ChangeNotifier {
   Position? userLocation;
 
   static const Map<String, Map<String, dynamic>> zones = {
+    'Bay Area': {
+      'center': {'lat': 37.7749, 'lng': -122.4194},
+      'radius': 80467
+    },
     'Norfolk': {
       'center': {'lat': 36.8508, 'lng': -76.2859},
       'radius': 120700
@@ -99,10 +103,9 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setUserCommand(String newCommand) async {
+  Future<void> setUserCommand(String? newCommand) async {
     command = newCommand;
-    currentFeed = newCommand;
-    
+    currentFeed = newCommand ?? 'All Navy';
     try {
       await FirebaseFirestore.instance
           .collection('users')

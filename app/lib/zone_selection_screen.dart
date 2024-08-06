@@ -7,6 +7,11 @@ import 'app_state.dart';
 import 'scuttlebutt_app.dart';
 
 class ZoneSelectionScreen extends StatefulWidget {
+  final bool isInitialSetup;
+
+  const ZoneSelectionScreen({Key? key, this.isInitialSetup = true})
+      : super(key: key);
+
   @override
   _ZoneSelectionScreenState createState() => _ZoneSelectionScreenState();
 }
@@ -18,7 +23,9 @@ class _ZoneSelectionScreenState extends State<ZoneSelectionScreen> {
   @override
   void initState() {
     super.initState();
-    _requestLocationPermission();
+    if (widget.isInitialSetup) {
+      _requestLocationPermission();
+    }
   }
 
   Future<void> _requestLocationPermission() async {
@@ -27,19 +34,16 @@ class _ZoneSelectionScreenState extends State<ZoneSelectionScreen> {
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
-        // Permission denied, show manual selection
         setState(() => _isLoading = false);
         return;
       }
     }
 
     if (permission == LocationPermission.deniedForever) {
-      // Permission permanently denied, show manual selection
       setState(() => _isLoading = false);
       return;
     }
 
-    // Permission granted, get location
     try {
       Position position = await Geolocator.getCurrentPosition();
       final appState = Provider.of<AppState>(context, listen: false);
@@ -60,40 +64,67 @@ class _ZoneSelectionScreenState extends State<ZoneSelectionScreen> {
     final appState = Provider.of<AppState>(context);
 
     return Scaffold(
-      appBar: AppBar(title: Text('Select Your Zone')),
+      appBar: AppBar(
+        title: Text(
+            widget.isInitialSetup ? 'Select Your Zone' : 'Change Your Zone'),
+      ),
       body: _isLoading
           ? Center(child: CircularProgressIndicator())
           : Padding(
-              padding: EdgeInsets.all(16.0),
+              padding: const EdgeInsets.all(16.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (_selectedZone != null && widget.isInitialSetup)
+                    Text(
+                      'Recommended zone based on your location: $_selectedZone',
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  SizedBox(height: 16),
                   Text(
-                    'Please select your zone:',
+                    'Please select your command zone:',
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   SizedBox(height: 16),
-                  ...AppState.zones.keys.map((zone) => RadioListTile<String>(
-                        title: Text(zone),
-                        value: zone,
-                        groupValue: _selectedZone,
-                        onChanged: (value) {
-                          setState(() => _selectedZone = value);
-                        },
-                      )),
-                  SizedBox(height: 16),
+                  Expanded(
+                    child: ListView(
+                      children: [
+                        RadioListTile<String?>(
+                          title: Text('No Zone'),
+                          value: null,
+                          groupValue: _selectedZone,
+                          onChanged: (value) {
+                            setState(() => _selectedZone = value);
+                          },
+                        ),
+                        ...AppState.zones.keys
+                            .map((zone) => RadioListTile<String>(
+                                  title: Text(zone),
+                                  value: zone,
+                                  groupValue: _selectedZone,
+                                  onChanged: (value) {
+                                    setState(() => _selectedZone = value);
+                                  },
+                                ))
+                            .toList(),
+                      ],
+                    ),
+                  ),
                   Center(
                     child: ElevatedButton(
                       child: Text('Confirm'),
-                      onPressed: _selectedZone == null
-                          ? null
-                          : () async {
-                              await appState.setUserCommand(_selectedZone!);
-                              Navigator.of(context).pushReplacement(
-                                MaterialPageRoute(
-                                    builder: (context) => ScuttleHomePage()),
-                              );
-                            },
+                      onPressed: () async {
+                        await appState.setUserCommand(_selectedZone);
+                        if (widget.isInitialSetup) {
+                          Navigator.of(context).pushReplacement(
+                            MaterialPageRoute(
+                                builder: (context) => ScuttleHomePage()),
+                          );
+                        } else {
+                          Navigator.of(context).pop();
+                        }
+                      },
                     ),
                   ),
                 ],

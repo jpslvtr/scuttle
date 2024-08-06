@@ -65,11 +65,13 @@ class SettingsScreen extends StatelessWidget {
           _buildSectionHeader('Account'),
           ListTile(
             leading: Icon(Icons.location_city),
-            title: Text('Change Command'),
+            title: Text('Change Zone'),
             subtitle: Text(appState.command ?? 'Not set'),
             onTap: () {
               Navigator.of(context).push(
-                MaterialPageRoute(builder: (context) => ZoneSelectionScreen()),
+                MaterialPageRoute(
+                    builder: (context) =>
+                        ZoneSelectionScreen(isInitialSetup: false)),
               );
             },
           ),

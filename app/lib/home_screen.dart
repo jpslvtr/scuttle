@@ -41,37 +41,47 @@ class HomeScreen extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              PopupMenuButton<String>(
-                initialValue: appState.currentFeed,
-                onSelected: (String newValue) {
-                  appState.setCurrentFeed(newValue);
-                },
-                itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                  PopupMenuItem<String>(
-                    value: 'All Navy',
-                    child: Text('All Navy'),
-                  ),
-                  if (appState.command != null)
+              if (appState.command != null)
+                PopupMenuButton<String>(
+                  initialValue: appState.currentFeed,
+                  onSelected: (String newValue) {
+                    appState.setCurrentFeed(newValue);
+                  },
+                  itemBuilder: (BuildContext context) =>
+                      <PopupMenuEntry<String>>[
+                    PopupMenuItem<String>(
+                      value: 'All Navy',
+                      child: Text('All Navy'),
+                    ),
                     PopupMenuItem<String>(
                       value: appState.command!,
                       child: Text(appState.command!),
                     ),
-                ],
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.arrow_drop_down, color: Colors.blue[800]),
-                    Text(
-                      appState.currentFeed,
-                      style: TextStyle(
-                        color: Colors.blue[800],
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
                   ],
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.arrow_drop_down, color: Colors.blue[800]),
+                      Text(
+                        appState.currentFeed,
+                        style: TextStyle(
+                          color: Colors.blue[800],
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                Text(
+                  'All Navy',
+                  style: TextStyle(
+                    color: Colors.blue[800],
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
             ],
           ),
         ),
