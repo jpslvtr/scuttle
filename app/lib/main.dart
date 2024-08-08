@@ -66,8 +66,7 @@ class AuthWrapper extends StatelessWidget {
                     return LoginScreen();
                   }
                   return FutureBuilder<void>(
-                    future: Provider.of<AppState>(context, listen: false)
-                        .initializeUser(user.uid),
+                    future: _initializeUserData(context, user),
                     builder: (context, snapshot) {
                       if (snapshot.connectionState == ConnectionState.done) {
                         return FutureBuilder<bool>(
@@ -104,5 +103,15 @@ class AuthWrapper extends StatelessWidget {
         return Scaffold(body: Center(child: CircularProgressIndicator()));
       },
     );
+  }
+
+  Future<void> _initializeUserData(BuildContext context, User user) async {
+    final appState = Provider.of<AppState>(context, listen: false);
+    await appState.initializeUser(user.uid);
+
+    // Check if the user has points, if not, calculate them
+    if (appState.userPoints == 0) {
+      await appState.calculateAndSetInitialPoints();
+    }
   }
 }

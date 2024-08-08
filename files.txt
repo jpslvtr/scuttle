@@ -22,7 +22,7 @@ class AboutScreen extends StatelessWidget {
             ),
             SizedBox(height: 16),
             _buildParagraph(
-              'Scuttle is an anonymous feed-based social app for service members to engage with other service members near them. As a Navy veteran, I initially focused on the Navy for this version.',
+              'Scuttle is an anonymous feed-based social app for service members to engage with other service members near them. As a Navy veteran, I focused on the Navy for this version.',
             ),
             SizedBox(height: 16),
             Text(
@@ -89,7 +89,7 @@ class AppState extends ChangeNotifier {
   bool isLocationPermissionChecked = false;
 
   static const Map<String, Map<String, dynamic>> zones = {
-    'Bay Area': {
+    'TEST: Bay Area': {
       'center': {'lat': 37.7749, 'lng': -122.4194},
       'radius': 80467
     },
@@ -145,12 +145,10 @@ class AppState extends ChangeNotifier {
         userPoints = userData['points'] as int? ?? 0;
         isNewUser = false;
       } else {
-        // If the document doesn't exist, create it
         await createUserDocument(uid);
       }
     } catch (e) {
       print('Error initializing user: $e');
-      // If there's an error, attempt to create the user document
       await createUserDocument(uid);
     }
     notifyListeners();
@@ -182,6 +180,77 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<void> updateUserPoints(int delta) async {
+    if (userId == null) return;
+
+    try {
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        DocumentReference userRef =
+            FirebaseFirestore.instance.collection('users').doc(userId);
+        DocumentSnapshot userDoc = await transaction.get(userRef);
+
+        if (!userDoc.exists) {
+          throw Exception('User document does not exist!');
+        }
+
+        int currentPoints = userDoc.get('points') as int? ?? 0;
+        int newPoints = currentPoints + delta;
+
+        transaction.update(userRef, {'points': newPoints});
+
+        userPoints = newPoints;
+      });
+      notifyListeners();
+    } catch (e) {
+      print('Error updating user points: $e');
+    }
+  }
+
+  Future<void> calculateAndSetInitialPoints() async {
+    if (userId == null) return;
+
+    try {
+      int totalPoints = 0;
+
+      // Calculate points from posts
+      QuerySnapshot postsDocs = await FirebaseFirestore.instance
+          .collection('posts')
+          .where('userId', isEqualTo: userId)
+          .get();
+      totalPoints += postsDocs.docs.length * 2;
+
+      // Calculate points from comments
+      QuerySnapshot commentsDocs = await FirebaseFirestore.instance
+          .collection('comments')
+          .where('userId', isEqualTo: userId)
+          .get();
+      totalPoints += commentsDocs.docs.length;
+
+      // Calculate points from post votes
+      for (var post in postsDocs.docs) {
+        totalPoints +=
+            (post.data() as Map<String, dynamic>)['points'] as int? ?? 0;
+      }
+
+      // Calculate points from comment votes
+      for (var comment in commentsDocs.docs) {
+        totalPoints +=
+            (comment.data() as Map<String, dynamic>)['points'] as int? ?? 0;
+      }
+
+      // Set the calculated points
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .update({'points': totalPoints});
+
+      userPoints = totalPoints;
+      notifyListeners();
+    } catch (e) {
+      print('Error calculating initial points: $e');
+    }
+  }
+  
   Future<bool> checkUserExists(String uid) async {
     try {
       DocumentSnapshot userDoc =
@@ -291,10 +360,18 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<String> getProfileEmoji() async {
-    DocumentSnapshot userDoc =
-        await FirebaseFirestore.instance.collection('users').doc(userId).get();
-    return (userDoc.data() as Map<String, dynamic>)['profileEmoji'] ?? '🙂';
+  Stream<QuerySnapshot> getPostsStream(String currentFeed) {
+    Query query;
+    if (currentFeed == 'All Navy') {
+      query = FirebaseFirestore.instance
+          .collection('posts')
+          .where('feed', isEqualTo: 'All Navy');
+    } else {
+      query = FirebaseFirestore.instance
+          .collection('posts')
+          .where('feed', isEqualTo: currentFeed);
+    }
+    return query.orderBy('timestamp', descending: true).limit(50).snapshots();
   }
 
   Stream<DocumentSnapshot> getPostStream(String postId) {
@@ -385,6 +462,21 @@ class AppState extends ChangeNotifier {
         transaction.update(userRef, {'commentVotes.$commentId': newVote});
 
         userCommentVotes[commentId] = newVote;
+
+        // Award points to the comment creator if it's an upvote
+        if (delta > 0) {
+          String commentCreatorId = freshComment.get('userId') as String;
+          if (commentCreatorId != userId) {
+            DocumentReference commentCreatorRef = FirebaseFirestore.instance
+                .collection('users')
+                .doc(commentCreatorId);
+            DocumentSnapshot commentCreatorDoc =
+                await transaction.get(commentCreatorRef);
+            int creatorPoints = commentCreatorDoc.get('points') as int? ?? 0;
+            transaction
+                .update(commentCreatorRef, {'points': creatorPoints + 1});
+          }
+        }
       });
     } catch (e) {
       print('Error updating comment points: $e');
@@ -394,7 +486,7 @@ class AppState extends ChangeNotifier {
   Future<void> createPost(String title, String content, String feed) async {
     if (userId == null) return;
 
-    String postFeed = feed == 'All Navy' ? 'Navy' : feed;
+    String postFeed = feed == 'All Navy' ? 'All Navy' : command ?? '';
 
     DocumentSnapshot userDoc =
         await FirebaseFirestore.instance.collection('users').doc(userId).get();
@@ -513,9 +605,7 @@ class AppState extends ChangeNotifier {
           .get();
 
       if (!userDoc.exists) {
-        // If the document doesn't exist, create it
         await createUserDocument(userId!);
-        // Fetch the document again
         userDoc = await FirebaseFirestore.instance
             .collection('users')
             .doc(userId)
@@ -595,64 +685,64 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> deletePost(String postId) async {
-  if (userId == null) return;
+    if (userId == null) return;
 
-  try {
-    DocumentSnapshot postDoc = await FirebaseFirestore.instance
-        .collection('posts')
-        .doc(postId)
-        .get();
+    try {
+      DocumentSnapshot postDoc = await FirebaseFirestore.instance
+          .collection('posts')
+          .doc(postId)
+          .get();
 
-    if (postDoc.exists) {
-      Map<String, dynamic> postData = postDoc.data() as Map<String, dynamic>;
-      if (postData['userId'] == userId) {
-        // Delete the post
-        await FirebaseFirestore.instance
-            .collection('posts')
-            .doc(postId)
-            .delete();
+      if (postDoc.exists) {
+        Map<String, dynamic> postData = postDoc.data() as Map<String, dynamic>;
+        if (postData['userId'] == userId) {
+          // Delete the post
+          await FirebaseFirestore.instance
+              .collection('posts')
+              .doc(postId)
+              .delete();
 
-        // Delete all comments associated with the post
-        QuerySnapshot comments = await FirebaseFirestore.instance
-            .collection('comments')
-            .where('postId', isEqualTo: postId)
-            .get();
+          // Delete all comments associated with the post
+          QuerySnapshot comments = await FirebaseFirestore.instance
+              .collection('comments')
+              .where('postId', isEqualTo: postId)
+              .get();
 
-        for (DocumentSnapshot commentDoc in comments.docs) {
-          await commentDoc.reference.delete();
+          for (DocumentSnapshot commentDoc in comments.docs) {
+            await commentDoc.reference.delete();
+          }
+
+          // Remove the post from saved posts of all users
+          QuerySnapshot usersWithSavedPost = await FirebaseFirestore.instance
+              .collection('users')
+              .where('savedPosts', arrayContains: postId)
+              .get();
+
+          for (DocumentSnapshot userDoc in usersWithSavedPost.docs) {
+            List<String> savedPosts = List<String>.from(userDoc['savedPosts']);
+            savedPosts.remove(postId);
+            await userDoc.reference.update({'savedPosts': savedPosts});
+          }
+
+          // Update local state
+          if (savedPosts.contains(postId)) {
+            savedPosts.remove(postId);
+          }
+
+          notifyListeners();
+        } else {
+          throw Exception('You do not have permission to delete this post');
         }
-
-        // Remove the post from saved posts of all users
-        QuerySnapshot usersWithSavedPost = await FirebaseFirestore.instance
-            .collection('users')
-            .where('savedPosts', arrayContains: postId)
-            .get();
-
-        for (DocumentSnapshot userDoc in usersWithSavedPost.docs) {
-          List<String> savedPosts = List<String>.from(userDoc['savedPosts']);
-          savedPosts.remove(postId);
-          await userDoc.reference.update({'savedPosts': savedPosts});
-        }
-
-        // Update local state
-        if (savedPosts.contains(postId)) {
-          savedPosts.remove(postId);
-        }
-
-        notifyListeners();
       } else {
-        throw Exception('You do not have permission to delete this post');
+        throw Exception('Post not found');
       }
-    } else {
-      throw Exception('Post not found');
+    } catch (e) {
+      print('Error deleting post: $e');
+      throw e;
     }
-  } catch (e) {
-    print('Error deleting post: $e');
-    throw e;
   }
-}
 
-Future<void> deleteComment(String postId, String commentId) async {
+  Future<void> deleteComment(String postId, String commentId) async {
     if (userId == null) return;
 
     try {
@@ -982,8 +1072,9 @@ class PostFeed extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final appState = Provider.of<AppState>(context);
     return StreamBuilder<QuerySnapshot>(
-      stream: _getPostStream(feedType, sortBy),
+      stream: appState.getPostsStream(feedType),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           print('Error in PostFeed: ${snapshot.error}');
@@ -1042,26 +1133,6 @@ class PostFeed extends StatelessWidget {
         );
       },
     );
-  }
-
-  Stream<QuerySnapshot> _getPostStream(String currentFeed, String sortBy) {
-    Query query;
-    if (currentFeed == 'All Navy') {
-      query = FirebaseFirestore.instance.collection('posts');
-    } else {
-      query = FirebaseFirestore.instance
-          .collection('posts')
-          .where('feed', isEqualTo: currentFeed);
-    }
-
-    if (sortBy == 'top') {
-      return query
-          .orderBy('timestamp', descending: true)
-          .limit(100)
-          .snapshots();
-    } else {
-      return query.orderBy('timestamp', descending: true).limit(50).snapshots();
-    }
   }
 
   double _calculateScore(DocumentSnapshot doc) {
@@ -1310,8 +1381,7 @@ class AuthWrapper extends StatelessWidget {
                     return LoginScreen();
                   }
                   return FutureBuilder<void>(
-                    future: Provider.of<AppState>(context, listen: false)
-                        .initializeUser(user.uid),
+                    future: _initializeUserData(context, user),
                     builder: (context, snapshot) {
                       if (snapshot.connectionState == ConnectionState.done) {
                         return FutureBuilder<bool>(
@@ -1348,6 +1418,16 @@ class AuthWrapper extends StatelessWidget {
         return Scaffold(body: Center(child: CircularProgressIndicator()));
       },
     );
+  }
+
+  Future<void> _initializeUserData(BuildContext context, User user) async {
+    final appState = Provider.of<AppState>(context, listen: false);
+    await appState.initializeUser(user.uid);
+
+    // Check if the user has points, if not, calculate them
+    if (appState.userPoints == 0) {
+      await appState.calculateAndSetInitialPoints();
+    }
   }
 }
 
@@ -1979,8 +2059,6 @@ class _CommentInputState extends State<CommentInput> {
 =================================================================
 
 File: app/lib/post_screen.dart
-
-// File: app/lib/post_screen.dart
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -3471,7 +3549,10 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null && request.auth.uid == userId;
-      allow update, delete: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && 
+                    (request.auth.uid == userId || 
+                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points']));
+      allow delete: if request.auth != null && request.auth.uid == userId;
     }
     
     match /posts/{postId} {
@@ -3479,7 +3560,7 @@ service cloud.firestore {
       allow create: if request.auth != null;
       allow update: if request.auth != null && 
                     (resource.data.userId == request.auth.uid || 
-                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points']));
+                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points', 'commentCount']));
       allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
     }
     

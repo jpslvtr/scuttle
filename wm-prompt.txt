@@ -7,4 +7,10 @@ Please read the attached file thoroughly.
 - Occam's razor. Simple code is preferred.
 - Make no assumptions. If you aren't certain about something, ask.
 
-The All Navy feed should be distinct from the feeds of each of the eight zones. For example, a post/comment from the Bay Area feed should not be reflected in the All Navy feed
+Help me establish a basic point system that'll increment the userPoints count. Ensure that each user has a "points" field. If existing users do not have a points feed, calculate it and set it. Points should not increment that much. By the time I have 10k users, I don't want anyone's points to be 4 digits or above. Scale that however you think is appropriate
+
+So far I've
+- Updated the home_screen.dart file to display the user's points
+- Made sure that existing users have their points calculated when they log in. Update the AuthWrapper in app/lib/main.dart
+- Updated the Firestore security rules to allow point updates
+- Started to update app_state.dart. I think there might still be work to do here but I'm not 100% sure

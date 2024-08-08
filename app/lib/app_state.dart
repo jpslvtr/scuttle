@@ -110,6 +110,77 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<void> updateUserPoints(int delta) async {
+    if (userId == null) return;
+
+    try {
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        DocumentReference userRef =
+            FirebaseFirestore.instance.collection('users').doc(userId);
+        DocumentSnapshot userDoc = await transaction.get(userRef);
+
+        if (!userDoc.exists) {
+          throw Exception('User document does not exist!');
+        }
+
+        int currentPoints = userDoc.get('points') as int? ?? 0;
+        int newPoints = currentPoints + delta;
+
+        transaction.update(userRef, {'points': newPoints});
+
+        userPoints = newPoints;
+      });
+      notifyListeners();
+    } catch (e) {
+      print('Error updating user points: $e');
+    }
+  }
+
+  Future<void> calculateAndSetInitialPoints() async {
+    if (userId == null) return;
+
+    try {
+      int totalPoints = 0;
+
+      // Calculate points from posts
+      QuerySnapshot postsDocs = await FirebaseFirestore.instance
+          .collection('posts')
+          .where('userId', isEqualTo: userId)
+          .get();
+      totalPoints += postsDocs.docs.length * 2;
+
+      // Calculate points from comments
+      QuerySnapshot commentsDocs = await FirebaseFirestore.instance
+          .collection('comments')
+          .where('userId', isEqualTo: userId)
+          .get();
+      totalPoints += commentsDocs.docs.length;
+
+      // Calculate points from post votes
+      for (var post in postsDocs.docs) {
+        totalPoints +=
+            (post.data() as Map<String, dynamic>)['points'] as int? ?? 0;
+      }
+
+      // Calculate points from comment votes
+      for (var comment in commentsDocs.docs) {
+        totalPoints +=
+            (comment.data() as Map<String, dynamic>)['points'] as int? ?? 0;
+      }
+
+      // Set the calculated points
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .update({'points': totalPoints});
+
+      userPoints = totalPoints;
+      notifyListeners();
+    } catch (e) {
+      print('Error calculating initial points: $e');
+    }
+  }
+  
   Future<bool> checkUserExists(String uid) async {
     try {
       DocumentSnapshot userDoc =
@@ -281,6 +352,19 @@ class AppState extends ChangeNotifier {
         transaction.update(userRef, {'votes.$postId': newVote});
 
         userVotes[postId] = newVote;
+
+        // Award points to the post creator
+        String postCreatorId = freshPost.get('userId') as String;
+        if (postCreatorId != userId) {
+          DocumentReference postCreatorRef = FirebaseFirestore.instance
+              .collection('users')
+              .doc(postCreatorId);
+          DocumentSnapshot postCreatorDoc =
+              await transaction.get(postCreatorRef);
+          int creatorPoints = postCreatorDoc.get('points') as int? ?? 0;
+          transaction
+              .update(postCreatorRef, {'points': creatorPoints + delta});
+        }
       });
     } catch (e) {
       print('Error updating post points: $e');
@@ -321,6 +405,21 @@ class AppState extends ChangeNotifier {
         transaction.update(userRef, {'commentVotes.$commentId': newVote});
 
         userCommentVotes[commentId] = newVote;
+
+        // Award points to the comment creator if it's an upvote
+        if (delta > 0) {
+          String commentCreatorId = freshComment.get('userId') as String;
+          if (commentCreatorId != userId) {
+            DocumentReference commentCreatorRef = FirebaseFirestore.instance
+                .collection('users')
+                .doc(commentCreatorId);
+            DocumentSnapshot commentCreatorDoc =
+                await transaction.get(commentCreatorRef);
+            int creatorPoints = commentCreatorDoc.get('points') as int? ?? 0;
+            transaction
+                .update(commentCreatorRef, {'points': creatorPoints + 1});
+          }
+        }
       });
     } catch (e) {
       print('Error updating comment points: $e');
@@ -352,6 +451,9 @@ class AppState extends ChangeNotifier {
       'profileEmoji': currentProfileEmoji,
     });
 
+    // Award points for creating a post
+    await updateUserPoints(2);
+
     notifyListeners();
   }
 
@@ -379,6 +481,9 @@ class AppState extends ChangeNotifier {
     await FirebaseFirestore.instance.collection('posts').doc(postId).update({
       'commentCount': FieldValue.increment(1),
     });
+
+    // Award points for creating a comment
+    await updateUserPoints(1);
 
     notifyListeners();
   }
