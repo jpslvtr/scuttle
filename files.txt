@@ -422,6 +422,19 @@ class AppState extends ChangeNotifier {
         transaction.update(userRef, {'votes.$postId': newVote});
 
         userVotes[postId] = newVote;
+
+        // Award points to the post creator
+        String postCreatorId = freshPost.get('userId') as String;
+        if (postCreatorId != userId) {
+          DocumentReference postCreatorRef = FirebaseFirestore.instance
+              .collection('users')
+              .doc(postCreatorId);
+          DocumentSnapshot postCreatorDoc =
+              await transaction.get(postCreatorRef);
+          int creatorPoints = postCreatorDoc.get('points') as int? ?? 0;
+          transaction
+              .update(postCreatorRef, {'points': creatorPoints + delta});
+        }
       });
     } catch (e) {
       print('Error updating post points: $e');
@@ -508,6 +521,9 @@ class AppState extends ChangeNotifier {
       'profileEmoji': currentProfileEmoji,
     });
 
+    // Award points for creating a post
+    await updateUserPoints(2);
+
     notifyListeners();
   }
 
@@ -535,6 +551,9 @@ class AppState extends ChangeNotifier {
     await FirebaseFirestore.instance.collection('posts').doc(postId).update({
       'commentCount': FieldValue.increment(1),
     });
+
+    // Award points for creating a comment
+    await updateUserPoints(1);
 
     notifyListeners();
   }
@@ -3551,7 +3570,7 @@ service cloud.firestore {
       allow create: if request.auth != null && request.auth.uid == userId;
       allow update: if request.auth != null && 
                     (request.auth.uid == userId || 
-                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points']));
+                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points', 'votes']));
       allow delete: if request.auth != null && request.auth.uid == userId;
     }
     
@@ -3560,7 +3579,7 @@ service cloud.firestore {
       allow create: if request.auth != null;
       allow update: if request.auth != null && 
                     (resource.data.userId == request.auth.uid || 
-                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points', 'commentCount']));
+                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points']));
       allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
     }
     

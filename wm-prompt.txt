@@ -1,16 +1,15 @@
+Apple sign in 
+API
+
+
 My app Scuttle is an anonymous feed-based platform for service members to engage with other members of their command, branch of service, and the entire military. The company version of this idea is roughly "Blind." The school version of this idea is roughly "Fizz." The community version of this idea used to be "Yik Yak." Please read the attached file thoroughly. It contains the code for the app and the Firestore database rules.
 
 Please read the attached file thoroughly.
 - For any code that needs editing, give me the FULL method or class. Even the unchanged parts.
-- If any code involves an API key, include the actual API key in your response. If rules need to be updated, give me the complete revised set of rules.
 - Ensure that code changes don’t break any existing functionality. 
 - Occam's razor. Simple code is preferred.
 - Make no assumptions. If you aren't certain about something, ask.
 
-Help me establish a basic point system that'll increment the userPoints count. Ensure that each user has a "points" field. If existing users do not have a points feed, calculate it and set it. Points should not increment that much. By the time I have 10k users, I don't want anyone's points to be 4 digits or above. Scale that however you think is appropriate
+I cannot up/downvote posts where users have “deleted” their accounts. I also can't up/downvote for some random posts. Please fix this. Users should be able to up/downvote all posts (by one point - I think this logic is fine)
 
-So far I've
-- Updated the home_screen.dart file to display the user's points
-- Made sure that existing users have their points calculated when they log in. Update the AuthWrapper in app/lib/main.dart
-- Updated the Firestore security rules to allow point updates
-- Started to update app_state.dart. I think there might still be work to do here but I'm not 100% sure
+flutter: Error updating post points: 'package:cloud_firestore_platform_interface/src/method_channel/method_channel_transaction.dart': Failed assertion: line 47 pos 12: '_commands.isEmpty': Transactions require all reads to be executed before all writes.

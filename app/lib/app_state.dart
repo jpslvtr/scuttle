@@ -345,26 +345,29 @@ class AppState extends ChangeNotifier {
         int oldPoints = freshPost.get('points') as int;
         int newPoints = oldPoints + delta;
 
-        transaction.update(postRef, {'points': newPoints});
-
+        // Read user document
         DocumentReference userRef =
             FirebaseFirestore.instance.collection('users').doc(userId);
+        DocumentSnapshot userDoc = await transaction.get(userRef);
+
+        // Read post creator document
+        String postCreatorId = freshPost.get('userId') as String;
+        DocumentReference postCreatorRef =
+            FirebaseFirestore.instance.collection('users').doc(postCreatorId);
+        DocumentSnapshot postCreatorDoc = await transaction.get(postCreatorRef);
+
+        // Perform all writes after reads
+        transaction.update(postRef, {'points': newPoints});
         transaction.update(userRef, {'votes.$postId': newVote});
 
-        userVotes[postId] = newVote;
-
-        // Award points to the post creator
-        String postCreatorId = freshPost.get('userId') as String;
-        if (postCreatorId != userId) {
-          DocumentReference postCreatorRef = FirebaseFirestore.instance
-              .collection('users')
-              .doc(postCreatorId);
-          DocumentSnapshot postCreatorDoc =
-              await transaction.get(postCreatorRef);
+        // Update post creator's points if the user exists
+        if (postCreatorDoc.exists && postCreatorId != userId) {
           int creatorPoints = postCreatorDoc.get('points') as int? ?? 0;
-          transaction
-              .update(postCreatorRef, {'points': creatorPoints + delta});
+          transaction.update(postCreatorRef, {'points': creatorPoints + delta});
         }
+
+        // Update local state
+        userVotes[postId] = newVote;
       });
     } catch (e) {
       print('Error updating post points: $e');
