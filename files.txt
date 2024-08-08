@@ -5,6 +5,7 @@ File: app/lib/app_state.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:geolocator/geolocator.dart';
 
 class AppState extends ChangeNotifier {
   String? userId;
@@ -14,7 +15,47 @@ class AppState extends ChangeNotifier {
   Map<String, int> userVotes = {};
   Map<String, int> userCommentVotes = {};
   String currentFeed = 'All Navy';
-  int userPoints = 0; // Placeholder for user points
+  int userPoints = 0;
+  Position? userLocation;
+
+  static const Map<String, Map<String, dynamic>> zones = {
+    'Bay Area': {
+      'center': {'lat': 37.7749, 'lng': -122.4194},
+      'radius': 80467
+    },
+    'Norfolk': {
+      'center': {'lat': 36.8508, 'lng': -76.2859},
+      'radius': 120700
+    },
+    'San Diego': {
+      'center': {'lat': 32.7157, 'lng': -117.1611},
+      'radius': 160934
+    },
+    'Jacksonville': {
+      'center': {'lat': 30.3322, 'lng': -81.6557},
+      'radius': 120700
+    },
+    'Pensacola': {
+      'center': {'lat': 30.4213, 'lng': -87.2169},
+      'radius': 160934
+    },
+    'Pacific Northwest': {
+      'center': {'lat': 47.6062, 'lng': -122.3321},
+      'radius': 160934
+    },
+    'Japan': {
+      'center': {'lat': 35.6762, 'lng': 139.6503},
+      'radius': 804672
+    },
+    'Hawaii': {
+      'center': {'lat': 21.3069, 'lng': -157.8583},
+      'radius': 321869
+    },
+    'National Capital Region': {
+      'center': {'lat': 38.9072, 'lng': -77.0369},
+      'radius': 160934
+    },
+  };
 
   AppState({this.userId, this.command, this.userName});
 
@@ -31,7 +72,7 @@ class AppState extends ChangeNotifier {
         userVotes = Map<String, int>.from(userData['votes'] ?? {});
         userCommentVotes =
             Map<String, int>.from(userData['commentVotes'] ?? {});
-        userPoints = userData['points'] as int? ?? 0; // Initialize user points
+        userPoints = userData['points'] as int? ?? 0;
       } else {
         await createUserDocument(uid);
       }
@@ -51,13 +92,60 @@ class AppState extends ChangeNotifier {
         'userName': '',
         'votes': {},
         'commentVotes': {},
-        'points': 0, // Initialize user points
+        'points': 0,
+        'command': null,
       }, SetOptions(merge: true));
     } catch (e) {
       print('Error creating user document: $e');
     }
   }
 
+  Future<void> setUserLocation(Position position) async {
+    userLocation = position;
+    notifyListeners();
+  }
+
+  Future<void> setUserCommand(String? newCommand) async {
+    command = newCommand;
+    currentFeed = newCommand ?? 'All Navy';
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .update({'command': newCommand});
+      notifyListeners();
+    } catch (e) {
+      print('Error updating user command: $e');
+    }
+  }
+
+  String? getRecommendedZone() {
+    if (userLocation == null) return null;
+
+    String? closestZone;
+    double minDistance = double.infinity;
+
+    for (var entry in zones.entries) {
+      var zone = entry.value;
+      var center = zone['center'];
+      var zoneRadius = zone['radius'];
+
+      double distance = Geolocator.distanceBetween(
+        userLocation!.latitude,
+        userLocation!.longitude,
+        center['lat'],
+        center['lng'],
+      );
+
+      if (distance < minDistance && distance <= zoneRadius) {
+        minDistance = distance;
+        closestZone = entry.key;
+      }
+    }
+
+    return closestZone;
+  }
+  
   void setCurrentFeed(String feed) {
     currentFeed = feed;
     notifyListeners();
@@ -539,36 +627,47 @@ class HomeScreen extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              PopupMenuButton<String>(
-                initialValue: appState.currentFeed,
-                onSelected: (String newValue) {
-                  appState.setCurrentFeed(newValue);
-                },
-                itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                  PopupMenuItem<String>(
-                    value: 'All Navy',
-                    child: Text('All Navy'),
-                  ),
-                  PopupMenuItem<String>(
-                    value: 'My Command',
-                    child: Text('My Command'),
-                  ),
-                ],
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.arrow_drop_down, color: Colors.blue[800]),
-                    Text(
-                      appState.currentFeed,
-                      style: TextStyle(
-                        color: Colors.blue[800],
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
+              if (appState.command != null)
+                PopupMenuButton<String>(
+                  initialValue: appState.currentFeed,
+                  onSelected: (String newValue) {
+                    appState.setCurrentFeed(newValue);
+                  },
+                  itemBuilder: (BuildContext context) =>
+                      <PopupMenuEntry<String>>[
+                    PopupMenuItem<String>(
+                      value: 'All Navy',
+                      child: Text('All Navy'),
+                    ),
+                    PopupMenuItem<String>(
+                      value: appState.command!,
+                      child: Text(appState.command!),
                     ),
                   ],
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.arrow_drop_down, color: Colors.blue[800]),
+                      Text(
+                        appState.currentFeed,
+                        style: TextStyle(
+                          color: Colors.blue[800],
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                Text(
+                  'All Navy',
+                  style: TextStyle(
+                    color: Colors.blue[800],
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
             ],
           ),
         ),
@@ -745,6 +844,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
 import 'app_state.dart';
 import 'scuttlebutt_app.dart';
+import 'zone_selection_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -772,7 +872,15 @@ class _LoginScreenState extends State<LoginScreen> {
       if (user != null) {
         final appState = Provider.of<AppState>(context, listen: false);
         await appState.initializeUser(user.uid);
-        _navigateToHome();
+        if (appState.command == null) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+                builder: (context) =>
+                    ZoneSelectionScreen(isInitialSetup: true)),
+          );
+        } else {
+          _navigateToHome();
+        }
       }
     } catch (e) {
       print('Error during sign in: $e');
@@ -912,26 +1020,7 @@ class AuthWrapper extends StatelessWidget {
 
 =================================================================
 
-File: app/lib/messages_screen.dart
-
-import 'package:flutter/material.dart';
-
-class MessagesScreen extends StatelessWidget {
-  const MessagesScreen({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Text('Messages screen - To be implemented'),
-    );
-  }
-}
-
-=================================================================
-
 File: app/lib/post_card.dart
-
-// File: app/lib/post_card.dart
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -970,6 +1059,7 @@ class PostCard extends StatelessWidget {
     final appState = Provider.of<AppState>(context);
     final isCreator = appState.userId == userId;
     final isSaved = appState.savedPosts.contains(postId);
+    final userVote = appState.userVotes[postId] ?? 0;
 
     return Card(
       margin: EdgeInsets.all(8.0),
@@ -1047,10 +1137,8 @@ class PostCard extends StatelessWidget {
                     children: [
                       IconButton(
                         icon: Icon(
-                          Icons.arrow_upward_rounded,
-                          color: appState.userVotes[postId] == 1
-                              ? Colors.red
-                              : null,
+                          Icons.arrow_upward,
+                          color: userVote == 1 ? Colors.orange : null,
                         ),
                         onPressed: () {
                           appState.updatePostPoints(postId, 1);
@@ -1059,10 +1147,8 @@ class PostCard extends StatelessWidget {
                       Text('$points'),
                       IconButton(
                         icon: Icon(
-                          Icons.arrow_downward_rounded,
-                          color: appState.userVotes[postId] == -1
-                              ? Colors.red
-                              : null,
+                          Icons.arrow_downward,
+                          color: userVote == -1 ? Colors.blue : null,
                         ),
                         onPressed: () {
                           appState.updatePostPoints(postId, -1);
@@ -1503,11 +1589,10 @@ class CommentCard extends StatelessWidget {
                       icon: Icon(
                         Icons.arrow_upward,
                         size: 16,
-                        color: currentVote == 1 ? Colors.red : null,
+                        color: currentVote == 1 ? Colors.orange : null,
                       ),
                       onPressed: () {
-                        appState.updateCommentPoints(
-                            commentId, currentVote == 1 ? -1 : 1);
+                        appState.updateCommentPoints(commentId, 1);
                       },
                     ),
                     Text('$points', style: TextStyle(fontSize: 12)),
@@ -1515,11 +1600,10 @@ class CommentCard extends StatelessWidget {
                       icon: Icon(
                         Icons.arrow_downward,
                         size: 16,
-                        color: currentVote == -1 ? Colors.red : null,
+                        color: currentVote == -1 ? Colors.blue : null,
                       ),
                       onPressed: () {
-                        appState.updateCommentPoints(
-                            commentId, currentVote == -1 ? 1 : -1);
+                        appState.updateCommentPoints(commentId, -1);
                       },
                     ),
                   ],
@@ -1565,6 +1649,21 @@ class CommentCard extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+String getRelativeTime(DateTime dateTime) {
+  final now = DateTime.now();
+  final difference = now.difference(dateTime);
+
+  if (difference.inSeconds < 60) {
+    return 'Now';
+  } else if (difference.inMinutes < 60) {
+    return '${difference.inMinutes} min';
+  } else if (difference.inHours < 24) {
+    return '${difference.inHours} hr';
+  } else {
+    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'}';
   }
 }
 
@@ -1617,21 +1716,6 @@ class _CommentInputState extends State<CommentInput> {
   void dispose() {
     _commentController.dispose();
     super.dispose();
-  }
-}
-
-String getRelativeTime(DateTime dateTime) {
-  final now = DateTime.now();
-  final difference = now.difference(dateTime);
-
-  if (difference.inSeconds < 60) {
-    return 'Now';
-  } else if (difference.inMinutes < 60) {
-    return '${difference.inMinutes} min';
-  } else if (difference.inHours < 24) {
-    return '${difference.inHours} hr';
-  } else {
-    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'}';
   }
 }
 
@@ -2351,7 +2435,6 @@ File: app/lib/scuttlebutt_app.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'home_screen.dart';
-import 'messages_screen.dart';
 import 'profile_screen.dart';
 import 'settings_screen.dart';
 import 'app_state.dart';
@@ -2394,7 +2477,6 @@ class _ScuttleHomePageState extends State<ScuttleHomePage> {
 
   final List<Widget> _widgetOptions = <Widget>[
     const HomeScreen(),
-    const MessagesScreen(),
     const ProfileScreen(),
     const SettingsScreen(),
   ];
@@ -2414,10 +2496,6 @@ class _ScuttleHomePageState extends State<ScuttleHomePage> {
           BottomNavigationBarItem(
             icon: Icon(Icons.home),
             label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.message),
-            label: 'Messages',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person),
@@ -2443,11 +2521,14 @@ class _ScuttleHomePageState extends State<ScuttleHomePage> {
 
 File: app/lib/settings_screen.dart
 
+// File: app/lib/settings_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'app_state.dart';
 import 'login_screen.dart';
+import 'zone_selection_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -2506,11 +2587,15 @@ class SettingsScreen extends StatelessWidget {
           ),
           _buildSectionHeader('Account'),
           ListTile(
-            leading: Icon(Icons.corporate_fare),
-            title: Text('Change commands'),
+            leading: Icon(Icons.location_city),
+            title: Text('Change Zone'),
+            subtitle: Text(appState.command ?? 'Not set'),
             onTap: () {
-              // TODO: Implement change commands functionality
-              print('Change commands tapped');
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                    builder: (context) =>
+                        ZoneSelectionScreen(isInitialSetup: false)),
+              );
             },
           ),
           ListTile(
@@ -2594,6 +2679,146 @@ class SettingsScreen extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+=================================================================
+
+File: app/lib/zone_selection_screen.dart
+
+// File: app/lib/zone_selection_screen.dart
+
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:geolocator/geolocator.dart';
+import 'app_state.dart';
+import 'scuttlebutt_app.dart';
+
+class ZoneSelectionScreen extends StatefulWidget {
+  final bool isInitialSetup;
+
+  const ZoneSelectionScreen({Key? key, this.isInitialSetup = true})
+      : super(key: key);
+
+  @override
+  _ZoneSelectionScreenState createState() => _ZoneSelectionScreenState();
+}
+
+class _ZoneSelectionScreenState extends State<ZoneSelectionScreen> {
+  String? _selectedZone;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isInitialSetup) {
+      _requestLocationPermission();
+    }
+  }
+
+  Future<void> _requestLocationPermission() async {
+    setState(() => _isLoading = true);
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        setState(() => _isLoading = false);
+        return;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      setState(() => _isLoading = false);
+      return;
+    }
+
+    try {
+      Position position = await Geolocator.getCurrentPosition();
+      final appState = Provider.of<AppState>(context, listen: false);
+      await appState.setUserLocation(position);
+      String? recommendedZone = appState.getRecommendedZone();
+      setState(() {
+        _selectedZone = recommendedZone;
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('Error getting location: $e');
+      setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appState = Provider.of<AppState>(context);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+            widget.isInitialSetup ? 'Select Your Zone' : 'Change Your Zone'),
+      ),
+      body: _isLoading
+          ? Center(child: CircularProgressIndicator())
+          : Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_selectedZone != null && widget.isInitialSetup)
+                    Text(
+                      'Recommended zone based on your location: $_selectedZone',
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  SizedBox(height: 16),
+                  Text(
+                    'Please select your command zone:',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  SizedBox(height: 16),
+                  Expanded(
+                    child: ListView(
+                      children: [
+                        RadioListTile<String?>(
+                          title: Text('No Zone'),
+                          value: null,
+                          groupValue: _selectedZone,
+                          onChanged: (value) {
+                            setState(() => _selectedZone = value);
+                          },
+                        ),
+                        ...AppState.zones.keys
+                            .map((zone) => RadioListTile<String>(
+                                  title: Text(zone),
+                                  value: zone,
+                                  groupValue: _selectedZone,
+                                  onChanged: (value) {
+                                    setState(() => _selectedZone = value);
+                                  },
+                                ))
+                            .toList(),
+                      ],
+                    ),
+                  ),
+                  Center(
+                    child: ElevatedButton(
+                      child: Text('Confirm'),
+                      onPressed: () async {
+                        await appState.setUserCommand(_selectedZone);
+                        if (widget.isInitialSetup) {
+                          Navigator.of(context).pushReplacement(
+                            MaterialPageRoute(
+                                builder: (context) => ScuttleHomePage()),
+                          );
+                        } else {
+                          Navigator.of(context).pop();
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
     );
   }
 }
@@ -2700,6 +2925,10 @@ File: app/ios/Runner/Info.plist
     <string>$(FLUTTER_BUILD_NUMBER)</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>This app needs access to location to recommend your command zone.</string>
+    <key>NSLocationAlwaysUsageDescription</key>
+    <string>This app needs access to location to recommend your command zone.</string>
     <key>UILaunchStoryboardName</key>
     <string>LaunchScreen</string>
     <key>UIMainStoryboardFile</key>
@@ -2811,6 +3040,7 @@ dependencies:
   cloud_firestore: ^4.8.0
   provider: ^6.0.2
   google_sign_in: ^6.1.0
+  geolocator: ^9.0.2 
 
 dev_dependencies:
   flutter_test:

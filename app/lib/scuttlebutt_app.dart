@@ -3,7 +3,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'home_screen.dart';
-import 'messages_screen.dart';
 import 'profile_screen.dart';
 import 'settings_screen.dart';
 import 'app_state.dart';
@@ -46,7 +45,6 @@ class _ScuttleHomePageState extends State<ScuttleHomePage> {
 
   final List<Widget> _widgetOptions = <Widget>[
     const HomeScreen(),
-    const MessagesScreen(),
     const ProfileScreen(),
     const SettingsScreen(),
   ];
@@ -66,10 +64,6 @@ class _ScuttleHomePageState extends State<ScuttleHomePage> {
           BottomNavigationBarItem(
             icon: Icon(Icons.home),
             label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.message),
-            label: 'Messages',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person),

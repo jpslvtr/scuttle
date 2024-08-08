@@ -1,4 +1,4 @@
-My app Scuttle is going to be an anonymous feed-based platform for service members to engage with other members of their command, branch of service, and the entire military. The company version of this idea is roughly "Blind." The school version of this idea is roughly "Fizz." The community version of this idea used to be "Yik Yak." Please read the attached file thoroughly. It contains the code for the app and the Firestore database rules.
+My app Scuttle is an anonymous feed-based platform for service members to engage with other members of their command, branch of service, and the entire military. The company version of this idea is roughly "Blind." The school version of this idea is roughly "Fizz." The community version of this idea used to be "Yik Yak." Please read the attached file thoroughly. It contains the code for the app and the Firestore database rules.
 
 Please read the attached file thoroughly.
 - For any code that needs editing, give me the FULL method or class. Even the unchanged parts.
@@ -6,6 +6,8 @@ Please read the attached file thoroughly.
 - Ensure that code changes don’t break asny existing functionality. 
 - Occam's razor. Simple code is preferred.
 - Make no assumptions. If you aren't certain about something, ask.
+
+Right now, upvoting/downvoting posts or comments results in a screen reload. Is there a way to avoid a reload, and instead have a more smooth UI/UX?
 
 Can you edit the user onboarding experience? Once they sign up / sign in with google, I'd like to prompt them for location information. If they don't want to give it, then they can manually pick a zone. But if they do provide it, then their zone will be recommended to them. And they can confirm before their zone is set. Zone = Command. 
 

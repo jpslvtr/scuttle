@@ -1,5 +1,3 @@
-// File: app/lib/post_card.dart
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
@@ -37,6 +35,7 @@ class PostCard extends StatelessWidget {
     final appState = Provider.of<AppState>(context);
     final isCreator = appState.userId == userId;
     final isSaved = appState.savedPosts.contains(postId);
+    final userVote = appState.userVotes[postId] ?? 0;
 
     return Card(
       margin: EdgeInsets.all(8.0),
@@ -114,10 +113,8 @@ class PostCard extends StatelessWidget {
                     children: [
                       IconButton(
                         icon: Icon(
-                          Icons.arrow_upward_rounded,
-                          color: appState.userVotes[postId] == 1
-                              ? Colors.red
-                              : null,
+                          Icons.arrow_upward,
+                          color: userVote == 1 ? Colors.orange : null,
                         ),
                         onPressed: () {
                           appState.updatePostPoints(postId, 1);
@@ -126,10 +123,8 @@ class PostCard extends StatelessWidget {
                       Text('$points'),
                       IconButton(
                         icon: Icon(
-                          Icons.arrow_downward_rounded,
-                          color: appState.userVotes[postId] == -1
-                              ? Colors.red
-                              : null,
+                          Icons.arrow_downward,
+                          color: userVote == -1 ? Colors.blue : null,
                         ),
                         onPressed: () {
                           appState.updatePostPoints(postId, -1);

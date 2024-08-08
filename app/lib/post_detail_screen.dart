@@ -354,11 +354,10 @@ class CommentCard extends StatelessWidget {
                       icon: Icon(
                         Icons.arrow_upward,
                         size: 16,
-                        color: currentVote == 1 ? Colors.red : null,
+                        color: currentVote == 1 ? Colors.orange : null,
                       ),
                       onPressed: () {
-                        appState.updateCommentPoints(
-                            commentId, currentVote == 1 ? -1 : 1);
+                        appState.updateCommentPoints(commentId, 1);
                       },
                     ),
                     Text('$points', style: TextStyle(fontSize: 12)),
@@ -366,11 +365,10 @@ class CommentCard extends StatelessWidget {
                       icon: Icon(
                         Icons.arrow_downward,
                         size: 16,
-                        color: currentVote == -1 ? Colors.red : null,
+                        color: currentVote == -1 ? Colors.blue : null,
                       ),
                       onPressed: () {
-                        appState.updateCommentPoints(
-                            commentId, currentVote == -1 ? 1 : -1);
+                        appState.updateCommentPoints(commentId, -1);
                       },
                     ),
                   ],
@@ -416,6 +414,21 @@ class CommentCard extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+String getRelativeTime(DateTime dateTime) {
+  final now = DateTime.now();
+  final difference = now.difference(dateTime);
+
+  if (difference.inSeconds < 60) {
+    return 'Now';
+  } else if (difference.inMinutes < 60) {
+    return '${difference.inMinutes} min';
+  } else if (difference.inHours < 24) {
+    return '${difference.inHours} hr';
+  } else {
+    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'}';
   }
 }
 
@@ -468,20 +481,5 @@ class _CommentInputState extends State<CommentInput> {
   void dispose() {
     _commentController.dispose();
     super.dispose();
-  }
-}
-
-String getRelativeTime(DateTime dateTime) {
-  final now = DateTime.now();
-  final difference = now.difference(dateTime);
-
-  if (difference.inSeconds < 60) {
-    return 'Now';
-  } else if (difference.inMinutes < 60) {
-    return '${difference.inMinutes} min';
-  } else if (difference.inHours < 24) {
-    return '${difference.inHours} hr';
-  } else {
-    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'}';
   }
 }
