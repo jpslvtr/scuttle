@@ -263,7 +263,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       },
     );
   }
- 
+
   bool _isValidUserName(String userName) {
     final RegExp validCharacters = RegExp(r'^[a-zA-Z0-9._]+$');
     return validCharacters.hasMatch(userName);
@@ -295,7 +295,6 @@ class _ProfileScreenState extends State<ProfileScreen>
             return PostCard(
               title: post['title'] ?? '',
               content: post['content'] ?? '',
-              points: post['points'] ?? 0,
               commentCount: post['commentCount'] ?? 0,
               timestamp: post['timestamp']?.toDate() ?? DateTime.now(),
               postId: posts[index].id,
@@ -473,8 +472,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               SizedBox(height: 8),
               Text(
                 commentData['content'] ?? '',
-                style: TextStyle(
-                ),
+                style: TextStyle(),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -559,7 +557,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                 return PostCard(
                   title: post['title'] ?? '',
                   content: post['content'] ?? '',
-                  points: post['points'] ?? 0,
                   commentCount: post['commentCount'] ?? 0,
                   timestamp: post['timestamp']?.toDate() ?? DateTime.now(),
                   postId: savedPosts[index].id,

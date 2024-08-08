@@ -195,7 +195,6 @@ class PostFeed extends StatelessWidget {
                 return PostCard(
                   title: data['title'] ?? '',
                   content: data['content'] ?? '',
-                  points: data['points'] ?? 0,
                   commentCount: data['commentCount'] ?? 0,
                   timestamp: data['timestamp']?.toDate() ?? DateTime.now(),
                   postId: document.id,

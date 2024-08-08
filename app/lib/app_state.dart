@@ -202,15 +202,29 @@ class AppState extends ChangeNotifier {
     return (userDoc.data() as Map<String, dynamic>)['profileEmoji'] ?? '🙂';
   }
 
+  Stream<DocumentSnapshot> getPostStream(String postId) {
+    return FirebaseFirestore.instance
+        .collection('posts')
+        .doc(postId)
+        .snapshots();
+  }
+
+  Stream<DocumentSnapshot> getCommentStream(String commentId) {
+    return FirebaseFirestore.instance
+        .collection('comments')
+        .doc(commentId)
+        .snapshots();
+  }
+
   Future<void> updatePostPoints(String postId, int delta) async {
     if (userId == null) return;
 
     try {
-      DocumentReference postRef =
-          FirebaseFirestore.instance.collection('posts').doc(postId);
-
       await FirebaseFirestore.instance.runTransaction((transaction) async {
+        DocumentReference postRef =
+            FirebaseFirestore.instance.collection('posts').doc(postId);
         DocumentSnapshot freshPost = await transaction.get(postRef);
+
         if (!freshPost.exists) {
           throw Exception('Post does not exist!');
         }
@@ -219,11 +233,9 @@ class AppState extends ChangeNotifier {
         int newVote;
 
         if (currentVote == delta) {
-          // If the user clicks the same vote button again, remove the vote
           newVote = 0;
           delta = -currentVote;
         } else {
-          // Otherwise, update the vote
           newVote = delta;
           delta = newVote - currentVote;
         }
@@ -239,7 +251,6 @@ class AppState extends ChangeNotifier {
 
         userVotes[postId] = newVote;
       });
-
       notifyListeners();
     } catch (e) {
       print('Error updating post points: $e');
@@ -250,11 +261,11 @@ class AppState extends ChangeNotifier {
     if (userId == null) return;
 
     try {
-      DocumentReference commentRef =
-          FirebaseFirestore.instance.collection('comments').doc(commentId);
-
       await FirebaseFirestore.instance.runTransaction((transaction) async {
+        DocumentReference commentRef =
+            FirebaseFirestore.instance.collection('comments').doc(commentId);
         DocumentSnapshot freshComment = await transaction.get(commentRef);
+
         if (!freshComment.exists) {
           throw Exception('Comment does not exist!');
         }
@@ -263,11 +274,9 @@ class AppState extends ChangeNotifier {
         int newVote;
 
         if (currentVote == delta) {
-          // If the user clicks the same vote button again, remove the vote
           newVote = 0;
           delta = -currentVote;
         } else {
-          // Otherwise, update the vote
           newVote = delta;
           delta = newVote - currentVote;
         }
@@ -283,7 +292,6 @@ class AppState extends ChangeNotifier {
 
         userCommentVotes[commentId] = newVote;
       });
-
       notifyListeners();
     } catch (e) {
       print('Error updating comment points: $e');

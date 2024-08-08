@@ -7,7 +7,14 @@ Please read the attached file thoroughly.
 - Occam's razor. Simple code is preferred.
 - Make no assumptions. If you aren't certain about something, ask.
 
-Right now, upvoting/downvoting posts or comments results in a screen reload. Is there a way to avoid a reload, and instead have a more smooth UI/UX?
+Right now, I get a reload in these cases
+- In Home tab + You tab (My Posts and Saved), when upvoting or downvoting a post, the whole screen reloads
+- In the post details page, when upvoting or downvoting a post, the point update is smooth and nothing in the post reloads (which is great), but the associated comments are reloaded
+- In the post details page, when upvoting or downvoting a comment, the point update is smooth but the username of the comment refreshes
+
+Can we reduce the reloads and have a more smooth UI/UX?
+
+
 
 Can you edit the user onboarding experience? Once they sign up / sign in with google, I'd like to prompt them for location information. If they don't want to give it, then they can manually pick a zone. But if they do provide it, then their zone will be recommended to them. And they can confirm before their zone is set. Zone = Command. 
 
