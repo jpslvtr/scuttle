@@ -20,7 +20,7 @@ class AboutScreen extends StatelessWidget {
             ),
             SizedBox(height: 16),
             _buildParagraph(
-              'Scuttle is an anonymous feed-based social app for service members to engage with other service members near them. As a Navy veteran, I initially focused on the Navy for this version.',
+              'Scuttle is an anonymous feed-based social app for service members to engage with other service members near them. As a Navy veteran, I focused on the Navy for this version.',
             ),
             SizedBox(height: 16),
             Text(

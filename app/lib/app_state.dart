@@ -19,7 +19,7 @@ class AppState extends ChangeNotifier {
   bool isLocationPermissionChecked = false;
 
   static const Map<String, Map<String, dynamic>> zones = {
-    'Bay Area': {
+    'TEST: Bay Area': {
       'center': {'lat': 37.7749, 'lng': -122.4194},
       'radius': 80467
     },
