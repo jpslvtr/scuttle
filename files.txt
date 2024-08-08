@@ -3404,7 +3404,7 @@ File: app/ios/Runner/Info.plist
             <string>Editor</string>
             <key>CFBundleURLSchemes</key>
             <array>
-                <string>com.park.scuttlebutt</string>
+                <string>com.park.scuttle</string>
             </array>
         </dict>
     </array>
