@@ -1,11 +1,12 @@
-// File: app/lib/settings_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'app_state.dart';
 import 'login_screen.dart';
 import 'zone_selection_screen.dart';
+import 'privacy_policy_screen.dart';
+import 'about_screen.dart';
+import 'guidelines_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -30,42 +31,39 @@ class SettingsScreen extends StatelessWidget {
           ),
           _buildSectionHeader('App'),
           ListTile(
-            leading: Icon(Icons.notifications),
-            title: Text('Notification options'),
+            leading: Icon(Icons.info),
+            title: Text('About'),
             onTap: () {
-              // TODO: Implement notification options
-              print('Notification options tapped');
-            },
-          ),
-          _buildSectionHeader('Support'),
-          ListTile(
-            leading: Icon(Icons.privacy_tip),
-            title: Text('Privacy policy'),
-            onTap: () {
-              // TODO: Show privacy policy
-              print('Privacy policy tapped');
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => AboutScreen()),
+              );
             },
           ),
           ListTile(
             leading: Icon(Icons.people),
-            title: Text('Community guidelines'),
+            title: Text('Guidelines'),
             onTap: () {
-              // TODO: Show community guidelines
-              print('Community guidelines tapped');
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => GuidelinesScreen()),
+              );
             },
           ),
           ListTile(
-            leading: Icon(Icons.bug_report),
-            title: Text('Report a bug'),
+            leading: Icon(Icons.privacy_tip),
+            title: Text('Privacy policy'),
             onTap: () {
-              // TODO: Implement bug reporting
-              print('Report a bug tapped');
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => PrivacyPolicyScreen()),
+              );
             },
           ),
           _buildSectionHeader('Account'),
           ListTile(
             leading: Icon(Icons.location_city),
-            title: Text('Change Zone'),
+            title: Text(appState.command == null ? 'Set Zone' : 'Current Zone'),
             subtitle: Text(appState.command ?? 'Not set'),
             onTap: () {
               Navigator.of(context).push(

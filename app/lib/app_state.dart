@@ -13,12 +13,16 @@ class AppState extends ChangeNotifier {
   String currentFeed = 'All Navy';
   int userPoints = 0;
   Position? userLocation;
+  bool isLocationDenied = false;
+  bool isOutOfZone = false;
+  bool isNewUser = true;
+  bool isLocationPermissionChecked = false;
 
   static const Map<String, Map<String, dynamic>> zones = {
-    'Bay Area': {
-      'center': {'lat': 37.7749, 'lng': -122.4194},
-      'radius': 80467
-    },
+    // 'Bay Area': {
+    //   'center': {'lat': 37.7749, 'lng': -122.4194},
+    //   'radius': 80467
+    // },
     'Norfolk': {
       'center': {'lat': 36.8508, 'lng': -76.2859},
       'radius': 120700
@@ -69,19 +73,28 @@ class AppState extends ChangeNotifier {
         userCommentVotes =
             Map<String, int>.from(userData['commentVotes'] ?? {});
         userPoints = userData['points'] as int? ?? 0;
+        isNewUser = false;
       } else {
+        // If the document doesn't exist, create it
         await createUserDocument(uid);
       }
     } catch (e) {
-      print('Error fetching or creating user data: $e');
+      print('Error initializing user: $e');
+      // If there's an error, attempt to create the user document
+      await createUserDocument(uid);
     }
     notifyListeners();
   }
 
   Future<void> createUserDocument(String uid) async {
     try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        throw Exception('No authenticated user found');
+      }
+
       await FirebaseFirestore.instance.collection('users').doc(uid).set({
-        'email': FirebaseAuth.instance.currentUser?.email,
+        'email': user.email,
         'createdAt': FieldValue.serverTimestamp(),
         'profileEmoji': '🙂',
         'savedPosts': [],
@@ -91,28 +104,33 @@ class AppState extends ChangeNotifier {
         'points': 0,
         'command': null,
       }, SetOptions(merge: true));
+      isNewUser = true;
+      notifyListeners();
     } catch (e) {
       print('Error creating user document: $e');
+      throw e;
     }
+  }
+
+  Future<bool> checkUserExists(String uid) async {
+    try {
+      DocumentSnapshot userDoc =
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      return userDoc.exists;
+    } catch (e) {
+      print('Error checking if user exists: $e');
+      return false;
+    }
+  }
+
+  Future<void> setLocationPermissionChecked(bool checked) async {
+    isLocationPermissionChecked = checked;
+    notifyListeners();
   }
 
   Future<void> setUserLocation(Position position) async {
     userLocation = position;
     notifyListeners();
-  }
-
-  Future<void> setUserCommand(String? newCommand) async {
-    command = newCommand;
-    currentFeed = newCommand ?? 'All Navy';
-    try {
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .update({'command': newCommand});
-      notifyListeners();
-    } catch (e) {
-      print('Error updating user command: $e');
-    }
   }
 
   String? getRecommendedZone() {
@@ -141,10 +159,40 @@ class AppState extends ChangeNotifier {
 
     return closestZone;
   }
-  
-  void setCurrentFeed(String feed) {
-    currentFeed = feed;
+
+  Future<void> setUserCommand(String? newCommand) async {
+    command = newCommand;
+    currentFeed = newCommand ?? 'All Navy';
+    isOutOfZone = newCommand == null;
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .update({'command': newCommand});
+      notifyListeners();
+    } catch (e) {
+      print('Error updating user command: $e');
+    }
+  }
+
+  void setLocationDenied(bool denied) {
+    isLocationDenied = denied;
     notifyListeners();
+  }
+
+  void setCurrentFeed(String feed) {
+    if (feed == 'All Navy' || feed == command) {
+      currentFeed = feed;
+      notifyListeners();
+    }
+  }
+
+  List<String> getAvailableFeeds() {
+    if (command != null) {
+      return ['All Navy', command!];
+    } else {
+      return ['All Navy'];
+    }
   }
 
   void clearUserData() {
@@ -331,6 +379,10 @@ class AppState extends ChangeNotifier {
           .doc(userId)
           .get();
 
+      if (!userDoc.exists) {
+        throw Exception('User document does not exist');
+      }
+
       Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
       String? userNameToCheck = userData['userName'] as String?;
       bool hadUsername = userNameToCheck != null && userNameToCheck.isNotEmpty;
@@ -382,6 +434,17 @@ class AppState extends ChangeNotifier {
           .collection('users')
           .doc(userId)
           .get();
+
+      if (!userDoc.exists) {
+        // If the document doesn't exist, create it
+        await createUserDocument(userId!);
+        // Fetch the document again
+        userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId)
+            .get();
+      }
+
       return userDoc.data() as Map<String, dynamic>;
     } catch (e) {
       print('Error fetching user profile: $e');

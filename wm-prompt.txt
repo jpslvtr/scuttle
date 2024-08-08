@@ -3,39 +3,26 @@ My app Scuttle is an anonymous feed-based platform for service members to engage
 Please read the attached file thoroughly.
 - For any code that needs editing, give me the FULL method or class. Even the unchanged parts.
 - If any code involves an API key, include the actual API key in your response. If rules need to be updated, give me the complete revised set of rules.
-- Ensure that code changes don’t break asny existing functionality. 
+- Ensure that code changes don’t break any existing functionality. 
 - Occam's razor. Simple code is preferred.
 - Make no assumptions. If you aren't certain about something, ask.
 
-Right now, I get a reload in these cases
-- In Home tab + You tab (My Posts and Saved), when upvoting or downvoting a post, the whole screen reloads
-- In the post details page, when upvoting or downvoting a post, the point update is smooth and nothing in the post reloads (which is great), but the associated comments are reloaded
-- In the post details page, when upvoting or downvoting a comment, the point update is smooth but the username of the comment refreshes
+Similar to how we have a privacy policy screen, can you have an about screen and a guidelines screen? For the settings page
 
-Can we reduce the reloads and have a more smooth UI/UX?
+Content for about:
 
+Welcome to Scuttle, an anonymous feed-based social app for service members to engage with other service members near them. As a Navy veteran, I initially focused on the Navy for this version. There are eight "zones," each with a generous radius: Norfolk, San Diego, Jacksonville, Pensacola, PNW, Japan, Hawaii, and the DMV. I initially considered setting zones at the command level, but decided against it due to OPSEC. All users' military status is verified through ID.me.
 
+Blind exists for companies, Fizz for colleges, and while Yik Yak is no longer as widely used, Scuttle aims to fill a similar niche for service members. Whether you're temporarily on TDY and don't know anyone, or you want to connect with service members near you, Scuttle is here to help. The main difference between our "All Navy" feed and the Navy subreddit is that everyone on Scuttle is a verified military member.
 
-Can you edit the user onboarding experience? Once they sign up / sign in with google, I'd like to prompt them for location information. If they don't want to give it, then they can manually pick a zone. But if they do provide it, then their zone will be recommended to them. And they can confirm before their zone is set. Zone = Command. 
+The app is still in development and may have some bugs. Feedback and comments are welcome. Please feel free to contact jpslvtr@gmail.com.
 
-Switching Commands in settings should easy too.
+Content for guidelines:
+- No PII (Personally Identifiable Information).
+- Don't troll or be disrespectful to others.
+- No hate speech or discriminatory content.
+- No posting links to malicious sites or spreading malware.
+- No obscene or explicit content.
+- No promotion or glorification of violence.
+- No illegal activities or content that violates laws.
 
-I want to have these as my zones.
-
-Zones
-Norfolk (Norfolk, Portsmouth, Virginia Beach, Little Creek, Oceana)
-- Radius: 75 miles
-San Diego (San Diego, Coronado, Point Loma, Camp Pendleton)
-- Radius: 100 miles
-Jacksonville (Jacksonville, Mayport, Kings Bay)
-- Radius: 75 miles
-Pensacola (NAS Pensacola, NAS Whiting Field, other training commands)
-- Radius: 100 miles
-Pacific Northwest (Everett, Bremerton, Bangor, Whidbey Island)
-- Radius: 100 miles
-Japan (Yokosuka, Sasebo, Okinawa, Atsugi)
-- Radius: 500 miles
-Hawaii (Pearl Harbor, Kaneohe Bay)
-- Radius: 200 miles
-National Capital Region (DC, Maryland, Virginia)
-- Radius: 100 miles

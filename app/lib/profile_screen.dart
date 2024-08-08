@@ -86,22 +86,9 @@ class _ProfileScreenState extends State<ProfileScreen>
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.blue[100],
-                  border: Border.all(
-                    color: Colors.blue[800]!,
-                    width: 2,
-                  ),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(4.0),
-                  child: Text(
-                    userData['profileEmoji'] ?? '🙂',
-                    style: TextStyle(fontSize: 40),
-                  ),
-                ),
+              Text(
+                userData['profileEmoji'] ?? '🙂',
+                style: TextStyle(fontSize: 40),
               ),
               SizedBox(width: 16),
               Text(

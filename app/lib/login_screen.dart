@@ -16,64 +16,94 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  Future<UserCredential> signInWithGoogle() async {
-    final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
-    final GoogleSignInAuthentication? googleAuth =
-        await googleUser?.authentication;
-    final credential = GoogleAuthProvider.credential(
-      accessToken: googleAuth?.accessToken,
-      idToken: googleAuth?.idToken,
-    );
-    return await FirebaseAuth.instance.signInWithCredential(credential);
-  }
+  bool _isLoading = false;
 
-  void _handleSignIn() async {
+  Future<UserCredential?> signInWithGoogle() async {
     try {
-      final UserCredential userCredential = await signInWithGoogle();
-      final user = userCredential.user;
-      if (user != null) {
-        final appState = Provider.of<AppState>(context, listen: false);
-        await appState.initializeUser(user.uid);
-        if (appState.command == null) {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-                builder: (context) =>
-                    ZoneSelectionScreen(isInitialSetup: true)),
-          );
-        } else {
-          _navigateToHome();
-        }
+      // Trigger the authentication flow
+      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+
+      if (googleUser == null) {
+        throw Exception('Google Sign In was canceled');
       }
+
+      // Obtain the auth details from the request
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+
+      // Create a new credential
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      // Sign in to Firebase with the Google credential
+      final UserCredential userCredential =
+          await FirebaseAuth.instance.signInWithCredential(credential);
+
+      return userCredential;
     } catch (e) {
-      print('Error during sign in: $e');
-      _showErrorDialog('Failed to sign in with Google');
+      print('Error in signInWithGoogle: $e');
+      return null;
     }
   }
 
-  void _navigateToHome() {
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (context) => ScuttleHomePage()),
-    );
+  void _handleSignIn() async {
+    if (_isLoading) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final UserCredential? userCredential = await signInWithGoogle();
+      if (userCredential != null && userCredential.user != null && mounted) {
+        final user = userCredential.user!;
+        final appState = Provider.of<AppState>(context, listen: false);
+
+        // Check if the user document already exists
+        bool userExists = await appState.checkUserExists(user.uid);
+
+        if (!userExists) {
+          // Create user document in Firestore
+          await appState.createUserDocument(user.uid);
+        }
+
+        // Initialize user data
+        await appState.initializeUser(user.uid);
+
+        // Navigate to ZoneSelectionScreen
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => ZoneSelectionScreen(isInitialSetup: true),
+          ),
+        );
+      } else {
+        throw Exception('Failed to sign in with Google');
+      }
+    } catch (e) {
+      print('Error during sign in: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to sign in with Google: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
-  void _showErrorDialog(String message) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Error'),
-          content: Text(message),
-          actions: <Widget>[
-            TextButton(
-              child: Text('OK'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-          ],
-        );
-      },
-    );
+  void _navigateToZoneSelection() {
+    if (mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+            builder: (context) => ZoneSelectionScreen(isInitialSetup: true)),
+      );
+    }
   }
 
   @override
@@ -100,18 +130,20 @@ class _LoginScreenState extends State<LoginScreen> {
                   backgroundColor: Colors.white,
                   padding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Image.asset(
-                      'assets/google_logo.png',
-                      height: 24.0,
-                    ),
-                    SizedBox(width: 10),
-                    Text('Sign in with Google'),
-                  ],
-                ),
-                onPressed: _handleSignIn,
+                child: _isLoading
+                    ? CircularProgressIndicator()
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Image.asset(
+                            'assets/google_logo.png',
+                            height: 24.0,
+                          ),
+                          SizedBox(width: 10),
+                          Text('Sign in with Google'),
+                        ],
+                      ),
+                onPressed: _isLoading ? null : _handleSignIn,
               ),
             ],
           ),

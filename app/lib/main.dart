@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'app_state.dart';
 import 'scuttlebutt_app.dart';
 import 'login_screen.dart';
+import 'zone_selection_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -30,22 +32,74 @@ class MyApp extends StatelessWidget {
 }
 
 class AuthWrapper extends StatelessWidget {
+  Future<bool> _checkFirstInstall() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    bool isFirstInstall = prefs.getBool('is_first_install') ?? true;
+    if (isFirstInstall) {
+      await prefs.setBool('is_first_install', false);
+    }
+    return isFirstInstall;
+  }
+
+  Future<bool> _checkZoneAcknowledged() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('zone_acknowledged') ?? false;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
+    return FutureBuilder<bool>(
+      future: _checkFirstInstall(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.active) {
-          User? user = snapshot.data;
-          if (user == null) {
+        if (snapshot.connectionState == ConnectionState.done) {
+          bool isFirstInstall = snapshot.data ?? true;
+
+          if (isFirstInstall) {
             return LoginScreen();
+          } else {
+            return StreamBuilder<User?>(
+              stream: FirebaseAuth.instance.authStateChanges(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.active) {
+                  User? user = snapshot.data;
+                  if (user == null) {
+                    return LoginScreen();
+                  }
+                  return FutureBuilder<void>(
+                    future: Provider.of<AppState>(context, listen: false)
+                        .initializeUser(user.uid),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.done) {
+                        return FutureBuilder<bool>(
+                          future: _checkZoneAcknowledged(),
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.done) {
+                              bool zoneAcknowledged = snapshot.data ?? false;
+                              final appState =
+                                  Provider.of<AppState>(context, listen: false);
+                              if (!zoneAcknowledged || appState.isNewUser) {
+                                return ZoneSelectionScreen(
+                                    isInitialSetup: true);
+                              }
+                              return ScuttleHomePage();
+                            }
+                            return Scaffold(
+                                body:
+                                    Center(child: CircularProgressIndicator()));
+                          },
+                        );
+                      }
+                      return Scaffold(
+                          body: Center(child: CircularProgressIndicator()));
+                    },
+                  );
+                }
+                return Scaffold(
+                    body: Center(child: CircularProgressIndicator()));
+              },
+            );
           }
-          // Initialize AppState with the user ID
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            Provider.of<AppState>(context, listen: false)
-                .initializeUser(user.uid);
-          });
-          return ScuttleHomePage();
         }
         return Scaffold(body: Center(child: CircularProgressIndicator()));
       },
