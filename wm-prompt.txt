@@ -10,6 +10,8 @@ Please read the attached file thoroughly.
 - Occam's razor. Simple code is preferred.
 - Make no assumptions. If you aren't certain about something, ask.
 
-I cannot up/downvote posts where users have “deleted” their accounts. I also can't up/downvote for some random posts. Please fix this. Users should be able to up/downvote all posts (by one point - I think this logic is fine)
+I'm running into an issue when up/downvoting comments - sometimes I get this error 
 
-flutter: Error updating post points: 'package:cloud_firestore_platform_interface/src/method_channel/method_channel_transaction.dart': Failed assertion: line 47 pos 12: '_commands.isEmpty': Transactions require all reads to be executed before all writes.
+flutter: Error updating comment points: 'package:cloud_firestore_platform_interface/src/method_channel/method_channel_transaction.dart': Failed assertion: line 47 pos 12: '_commands.isEmpty': Transactions require all reads to be executed before all writes.
+
+Other times the vote counts are unbounded - they can be incremented/decremented by a user by more than one point. That should not happen
