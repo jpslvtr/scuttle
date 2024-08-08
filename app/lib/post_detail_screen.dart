@@ -100,19 +100,49 @@ class CommentList extends StatelessWidget {
           return Center(child: CircularProgressIndicator());
         }
 
-        return ListView(
+        final commentDocs = snapshot.data!.docs;
+
+        return ListView.builder(
           shrinkWrap: true,
           physics: NeverScrollableScrollPhysics(),
-          children: snapshot.data!.docs.map((DocumentSnapshot document) {
-            Map<String, dynamic> data = document.data() as Map<String, dynamic>;
-            return CommentCard(
-              content: data['content'] ?? '',
-              timestamp: data['timestamp']?.toDate() ?? DateTime.now(),
-              commentId: document.id,
-              userId: data['userId'] ?? '',
-              postId: postId,
+          itemCount: commentDocs.length,
+          itemBuilder: (context, index) {
+            final commentDoc = commentDocs[index];
+            final commentData = commentDoc.data() as Map<String, dynamic>;
+
+            return FutureBuilder<DocumentSnapshot>(
+              future: FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(commentData['userId'])
+                  .get(),
+              builder: (context, userSnapshot) {
+                if (userSnapshot.connectionState == ConnectionState.waiting) {
+                  return CircularProgressIndicator();
+                }
+
+                String userName = '@[deleted]';
+                String profileEmoji = '🫥';
+
+                if (userSnapshot.hasData && userSnapshot.data != null) {
+                  final userData =
+                      userSnapshot.data!.data() as Map<String, dynamic>?;
+                  userName = userData?['userName'] as String? ?? '';
+                  profileEmoji = userData?['profileEmoji'] as String? ?? '🫥';
+                }
+
+                return CommentCard(
+                  content: commentData['content'] ?? '',
+                  timestamp:
+                      commentData['timestamp']?.toDate() ?? DateTime.now(),
+                  commentId: commentDoc.id,
+                  userId: commentData['userId'] ?? '',
+                  postId: postId,
+                  userName: userName,
+                  profileEmoji: profileEmoji,
+                );
+              },
             );
-          }).toList(),
+          },
         );
       },
     );
@@ -125,6 +155,8 @@ class CommentCard extends StatelessWidget {
   final String commentId;
   final String userId;
   final String postId;
+  final String userName;
+  final String profileEmoji;
 
   const CommentCard({
     Key? key,
@@ -133,84 +165,62 @@ class CommentCard extends StatelessWidget {
     required this.commentId,
     required this.userId,
     required this.postId,
+    required this.userName,
+    required this.profileEmoji,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
-    final currentVote = appState.userCommentVotes[commentId] ?? 0;
 
-    return StreamBuilder<DocumentSnapshot>(
-      stream: appState.getCommentStream(commentId),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Text('Error: ${snapshot.error}');
-        }
-
-        if (!snapshot.hasData) {
-          return CircularProgressIndicator();
-        }
-
-        final commentData = snapshot.data!.data() as Map<String, dynamic>;
-        final points = commentData['points'] as int? ?? 0;
-
-        return Card(
-          margin: EdgeInsets.symmetric(vertical: 4.0),
-          child: Padding(
-            padding: EdgeInsets.all(8.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return Card(
+      margin: EdgeInsets.symmetric(vertical: 4.0),
+      child: Padding(
+        padding: EdgeInsets.all(8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    FutureBuilder<DocumentSnapshot>(
-                      future: FirebaseFirestore.instance
-                          .collection('users')
-                          .doc(userId)
-                          .get(),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return Text('Loading...');
-                        }
-                        if (snapshot.hasError || !snapshot.hasData) {
-                          return Text('@[deleted]');
-                        }
-                        final userData =
-                            snapshot.data!.data() as Map<String, dynamic>?;
-                        final userName = userData?['userName'] as String? ?? '';
-                        final profileEmoji =
-                            userData?['profileEmoji'] as String? ?? '🙂';
-                        return Row(
-                          children: [
-                            Text(profileEmoji),
-                            SizedBox(width: 4),
-                            Text(
-                              userName.isEmpty ? '@[deleted]' : '@$userName',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                    if (userId == appState.userId)
-                      IconButton(
-                        icon: Icon(Icons.delete, size: 20),
-                        onPressed: () =>
-                            _showDeleteCommentConfirmation(context, appState),
-                        padding: EdgeInsets.zero,
-                        constraints: BoxConstraints(),
+                    Text(profileEmoji),
+                    SizedBox(width: 4),
+                    Text(
+                      userName.isEmpty ? '@[deleted]' : '@$userName',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
                       ),
+                    ),
                   ],
                 ),
-                SizedBox(height: 4),
-                Text(content),
-                SizedBox(height: 4),
-                Row(
+                if (userId == appState.userId)
+                  IconButton(
+                    icon: Icon(Icons.delete, size: 20),
+                    onPressed: () =>
+                        _showDeleteCommentConfirmation(context, appState),
+                    padding: EdgeInsets.zero,
+                    constraints: BoxConstraints(),
+                  ),
+              ],
+            ),
+            SizedBox(height: 4),
+            Text(content),
+            SizedBox(height: 4),
+            StreamBuilder<DocumentSnapshot>(
+              stream: appState.getCommentStream(commentId),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return CircularProgressIndicator();
+                }
+                final commentData =
+                    snapshot.data!.data() as Map<String, dynamic>;
+                final points = commentData['points'] as int? ?? 0;
+                final currentVote = appState.userCommentVotes[commentId] ?? 0;
+
+                return Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Row(
@@ -246,12 +256,12 @@ class CommentCard extends StatelessWidget {
                       ),
                     ),
                   ],
-                ),
-              ],
+                );
+              },
             ),
-          ),
-        );
-      },
+          ],
+        ),
+      ),
     );
   }
 

@@ -33,93 +33,89 @@ class PostCard extends StatelessWidget {
     final appState = Provider.of<AppState>(context);
     final isCreator = appState.userId == userId;
     final isSaved = appState.savedPosts.contains(postId);
-    final userVote = appState.userVotes[postId] ?? 0;
 
-    return StreamBuilder<DocumentSnapshot>(
-      stream: appState.getPostStream(postId),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Text('Error: ${snapshot.error}');
-        }
-
-        if (!snapshot.hasData) {
-          return CircularProgressIndicator();
-        }
-
-        final postData = snapshot.data!.data() as Map<String, dynamic>;
-        final points = postData['points'] as int? ?? 0;
-
-        return Card(
-          margin: EdgeInsets.all(8.0),
-          child: InkWell(
-            onTap: isDetailView
-                ? null
-                : () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => PostDetailScreen(postId: postId),
-                      ),
-                    );
-                  },
-            child: Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: Row(
-                          children: [
-                            Text(profileEmoji),
-                            SizedBox(width: 4),
-                            Text(
-                              userName,
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            SizedBox(width: 8),
-                            Text(
-                              getRelativeTime(timestamp),
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (isCreator && !isDetailView)
-                        IconButton(
-                          icon: Icon(Icons.delete, size: 20),
-                          onPressed: () =>
-                              _showDeleteConfirmation(context, appState),
-                          padding: EdgeInsets.zero,
-                          constraints: BoxConstraints(),
-                          alignment: Alignment.centerRight,
-                        ),
-                    ],
+    return Card(
+      margin: EdgeInsets.all(8.0),
+      child: InkWell(
+        onTap: isDetailView
+            ? null
+            : () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => PostDetailScreen(postId: postId),
                   ),
-                  SizedBox(height: 8),
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                );
+              },
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Text(profileEmoji),
+                        SizedBox(width: 4),
+                        Text(
+                          userName,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          getRelativeTime(timestamp),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  SizedBox(height: 4),
-                  Text(
-                    content,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  SizedBox(height: 8),
-                  Row(
+                  if (isCreator && !isDetailView)
+                    IconButton(
+                      icon: Icon(Icons.delete, size: 20),
+                      onPressed: () =>
+                          _showDeleteConfirmation(context, appState),
+                      padding: EdgeInsets.zero,
+                      constraints: BoxConstraints(),
+                      alignment: Alignment.centerRight,
+                    ),
+                ],
+              ),
+              SizedBox(height: 8),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              SizedBox(height: 4),
+              Text(
+                content,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+              SizedBox(height: 8),
+              StreamBuilder<DocumentSnapshot>(
+                stream: appState.getPostStream(postId),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return CircularProgressIndicator();
+                  }
+                  final postData =
+                      snapshot.data!.data() as Map<String, dynamic>;
+                  final points = postData['points'] as int? ?? 0;
+                  final userVote = appState.userVotes[postId] ?? 0;
+
+                  return Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Row(
@@ -159,13 +155,13 @@ class PostCard extends StatelessWidget {
                         },
                       ),
                     ],
-                  ),
-                ],
+                  );
+                },
               ),
-            ),
+            ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 

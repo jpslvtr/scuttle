@@ -1,5 +1,3 @@
-// File: app/lib/app_state.dart
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -251,7 +249,6 @@ class AppState extends ChangeNotifier {
 
         userVotes[postId] = newVote;
       });
-      notifyListeners();
     } catch (e) {
       print('Error updating post points: $e');
     }
@@ -292,7 +289,6 @@ class AppState extends ChangeNotifier {
 
         userCommentVotes[commentId] = newVote;
       });
-      notifyListeners();
     } catch (e) {
       print('Error updating comment points: $e');
     }
@@ -459,45 +455,64 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> deletePost(String postId) async {
-    if (userId == null) return;
+  if (userId == null) return;
 
-    try {
-      DocumentSnapshot postDoc = await FirebaseFirestore.instance
-          .collection('posts')
-          .doc(postId)
-          .get();
+  try {
+    DocumentSnapshot postDoc = await FirebaseFirestore.instance
+        .collection('posts')
+        .doc(postId)
+        .get();
 
-      if (postDoc.exists) {
-        Map<String, dynamic> postData = postDoc.data() as Map<String, dynamic>;
-        if (postData['userId'] == userId) {
-          await FirebaseFirestore.instance
-              .collection('posts')
-              .doc(postId)
-              .delete();
+    if (postDoc.exists) {
+      Map<String, dynamic> postData = postDoc.data() as Map<String, dynamic>;
+      if (postData['userId'] == userId) {
+        // Delete the post
+        await FirebaseFirestore.instance
+            .collection('posts')
+            .doc(postId)
+            .delete();
 
-          QuerySnapshot comments = await FirebaseFirestore.instance
-              .collection('comments')
-              .where('postId', isEqualTo: postId)
-              .get();
+        // Delete all comments associated with the post
+        QuerySnapshot comments = await FirebaseFirestore.instance
+            .collection('comments')
+            .where('postId', isEqualTo: postId)
+            .get();
 
-          for (DocumentSnapshot commentDoc in comments.docs) {
-            await commentDoc.reference.delete();
-          }
-
-          notifyListeners();
-        } else {
-          throw Exception('You do not have permission to delete this post');
+        for (DocumentSnapshot commentDoc in comments.docs) {
+          await commentDoc.reference.delete();
         }
-      } else {
-        throw Exception('Post not found');
-      }
-    } catch (e) {
-      print('Error deleting post: $e');
-      throw e;
-    }
-  }
 
-  Future<void> deleteComment(String postId, String commentId) async {
+        // Remove the post from saved posts of all users
+        QuerySnapshot usersWithSavedPost = await FirebaseFirestore.instance
+            .collection('users')
+            .where('savedPosts', arrayContains: postId)
+            .get();
+
+        for (DocumentSnapshot userDoc in usersWithSavedPost.docs) {
+          List<String> savedPosts = List<String>.from(userDoc['savedPosts']);
+          savedPosts.remove(postId);
+          await userDoc.reference.update({'savedPosts': savedPosts});
+        }
+
+        // Update local state
+        if (savedPosts.contains(postId)) {
+          savedPosts.remove(postId);
+        }
+
+        notifyListeners();
+      } else {
+        throw Exception('You do not have permission to delete this post');
+      }
+    } else {
+      throw Exception('Post not found');
+    }
+  } catch (e) {
+    print('Error deleting post: $e');
+    throw e;
+  }
+}
+
+Future<void> deleteComment(String postId, String commentId) async {
     if (userId == null) return;
 
     try {
@@ -569,19 +584,64 @@ class AppState extends ChangeNotifier {
 
     try {
       List<DocumentSnapshot> savedPostDocs = [];
-      for (String postId in savedPosts) {
-        DocumentSnapshot postDoc = await FirebaseFirestore.instance
+
+      // Use batched reads to fetch all saved posts at once
+      final batches = <Future<List<DocumentSnapshot>>>[];
+      for (var i = 0; i < savedPosts.length; i += 10) {
+        final end = (i + 10 < savedPosts.length) ? i + 10 : savedPosts.length;
+        final batch = FirebaseFirestore.instance
             .collection('posts')
-            .doc(postId)
-            .get();
-        if (postDoc.exists) {
-          savedPostDocs.add(postDoc);
-        }
+            .where(FieldPath.documentId, whereIn: savedPosts.sublist(i, end))
+            .get()
+            .then((snapshot) => snapshot.docs);
+        batches.add(batch);
       }
+
+      final results = await Future.wait(batches);
+      for (var batch in results) {
+        savedPostDocs.addAll(batch);
+      }
+
+      // Sort the posts to match the order in savedPosts
+      savedPostDocs.sort((a, b) =>
+          savedPosts.indexOf(a.id).compareTo(savedPosts.indexOf(b.id)));
+
       return savedPostDocs;
     } catch (e) {
       print('Error fetching saved posts: $e');
       return [];
+    }
+  }
+
+  Future<Map<String, Map<String, dynamic>>> getUsersData(
+      List<String> userIds) async {
+    final uniqueUserIds = userIds.toSet().toList();
+    final Map<String, Map<String, dynamic>> usersData = {};
+
+    try {
+      final batches = <Future<List<DocumentSnapshot>>>[];
+      for (var i = 0; i < uniqueUserIds.length; i += 10) {
+        final end =
+            (i + 10 < uniqueUserIds.length) ? i + 10 : uniqueUserIds.length;
+        final batch = FirebaseFirestore.instance
+            .collection('users')
+            .where(FieldPath.documentId, whereIn: uniqueUserIds.sublist(i, end))
+            .get()
+            .then((snapshot) => snapshot.docs);
+        batches.add(batch);
+      }
+
+      final results = await Future.wait(batches);
+      for (var batch in results) {
+        for (var doc in batch) {
+          usersData[doc.id] = doc.data() as Map<String, dynamic>;
+        }
+      }
+
+      return usersData;
+    } catch (e) {
+      print('Error fetching users data: $e');
+      return {};
     }
   }
 }
