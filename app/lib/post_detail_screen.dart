@@ -39,32 +39,60 @@ class PostDetailScreen extends StatelessWidget {
                   Map<String, dynamic> postData =
                       snapshot.data!.data() as Map<String, dynamic>;
 
-                  return ListView(
-                    padding: EdgeInsets.all(16.0),
-                    children: [
-                      PostCard(
-                        title: postData['title'] ?? '',
-                        content: postData['content'] ?? '',
-                        commentCount: postData['commentCount'] ?? 0,
-                        timestamp:
-                            postData['timestamp']?.toDate() ?? DateTime.now(),
-                        postId: postId,
-                        userId: postData['userId'] ?? '',
-                        profileEmoji: postData['profileEmoji'] ?? '🙂',
-                        userName: '@${postData['userName'] ?? 'anonymous'}',
-                        isDetailView: true,
-                      ),
-                      Divider(),
-                      Text(
-                        'Comments',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      SizedBox(height: 8),
-                      CommentList(postId: postId),
-                    ],
+                  return FutureBuilder<DocumentSnapshot>(
+                    future: FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(postData['userId'])
+                        .get(),
+                    builder: (context, userSnapshot) {
+                      String userName = '@anonymous';
+                      String profileEmoji = '🫥';
+                      if (userSnapshot.connectionState ==
+                          ConnectionState.done) {
+                        if (userSnapshot.hasData && userSnapshot.data!.exists) {
+                          final userData = userSnapshot.data!.data()
+                              as Map<String, dynamic>?;
+                          userName = userData?['userName'] as String? ?? '';
+                          profileEmoji =
+                              userData?['profileEmoji'] as String? ?? '🫥';
+                          if (userName.isEmpty) {
+                            userName = '@anonymous';
+                          } else {
+                            userName = '@$userName';
+                          }
+                        } else {
+                          userName = '@[deleted]';
+                        }
+                      }
+
+                      return ListView(
+                        padding: EdgeInsets.all(16.0),
+                        children: [
+                          PostCard(
+                            title: postData['title'] ?? '',
+                            content: postData['content'] ?? '',
+                            commentCount: postData['commentCount'] ?? 0,
+                            timestamp: postData['timestamp']?.toDate() ??
+                                DateTime.now(),
+                            postId: postId,
+                            userId: postData['userId'] ?? '',
+                            profileEmoji: profileEmoji,
+                            userName: userName,
+                            isDetailView: true,
+                          ),
+                          Divider(),
+                          Text(
+                            'Comments',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          SizedBox(height: 8),
+                          CommentList(postId: postId),
+                        ],
+                      );
+                    },
                   );
                 },
               ),
@@ -120,14 +148,23 @@ class CommentList extends StatelessWidget {
                   return CircularProgressIndicator();
                 }
 
-                String userName = '@[deleted]';
+                String userName = '@anonymous';
                 String profileEmoji = '🫥';
 
-                if (userSnapshot.hasData && userSnapshot.data != null) {
-                  final userData =
-                      userSnapshot.data!.data() as Map<String, dynamic>?;
-                  userName = userData?['userName'] as String? ?? '';
-                  profileEmoji = userData?['profileEmoji'] as String? ?? '🫥';
+                if (userSnapshot.connectionState == ConnectionState.done) {
+                  if (userSnapshot.hasData && userSnapshot.data!.exists) {
+                    final userData =
+                        userSnapshot.data!.data() as Map<String, dynamic>?;
+                    userName = userData?['userName'] as String? ?? '';
+                    profileEmoji = userData?['profileEmoji'] as String? ?? '🫥';
+                    if (userName.isEmpty) {
+                      userName = '@anonymous';
+                    } else {
+                      userName = '@$userName';
+                    }
+                  } else {
+                    userName = '@[deleted]';
+                  }
                 }
 
                 return CommentCard(
@@ -188,7 +225,7 @@ class CommentCard extends StatelessWidget {
                     Text(profileEmoji),
                     SizedBox(width: 4),
                     Text(
-                      userName.isEmpty ? '@[deleted]' : '@$userName',
+                      userName,
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,

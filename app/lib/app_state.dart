@@ -19,10 +19,10 @@ class AppState extends ChangeNotifier {
   bool isLocationPermissionChecked = false;
 
   static const Map<String, Map<String, dynamic>> zones = {
-    // 'Bay Area': {
-    //   'center': {'lat': 37.7749, 'lng': -122.4194},
-    //   'radius': 80467
-    // },
+    'Bay Area': {
+      'center': {'lat': 37.7749, 'lng': -122.4194},
+      'radius': 80467
+    },
     'Norfolk': {
       'center': {'lat': 36.8508, 'lng': -76.2859},
       'radius': 120700
@@ -75,12 +75,10 @@ class AppState extends ChangeNotifier {
         userPoints = userData['points'] as int? ?? 0;
         isNewUser = false;
       } else {
-        // If the document doesn't exist, create it
         await createUserDocument(uid);
       }
     } catch (e) {
       print('Error initializing user: $e');
-      // If there's an error, attempt to create the user document
       await createUserDocument(uid);
     }
     notifyListeners();
@@ -221,31 +219,18 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> createPost(String title, String content, String feed) async {
-    if (userId == null) return;
-
-    String postFeed = feed == 'All Navy' ? 'Navy' : feed;
-
-    await FirebaseFirestore.instance.collection('posts').add({
-      'title': title,
-      'content': content,
-      'userId': userId,
-      'userName': userName,
-      'command': command,
-      'feed': postFeed,
-      'points': 0,
-      'commentCount': 0,
-      'timestamp': FieldValue.serverTimestamp(),
-      'profileEmoji': await getProfileEmoji(),
-    });
-
-    notifyListeners();
-  }
-
-  Future<String> getProfileEmoji() async {
-    DocumentSnapshot userDoc =
-        await FirebaseFirestore.instance.collection('users').doc(userId).get();
-    return (userDoc.data() as Map<String, dynamic>)['profileEmoji'] ?? '🙂';
+  Stream<QuerySnapshot> getPostsStream(String currentFeed) {
+    Query query;
+    if (currentFeed == 'All Navy') {
+      query = FirebaseFirestore.instance
+          .collection('posts')
+          .where('feed', isEqualTo: 'All Navy');
+    } else {
+      query = FirebaseFirestore.instance
+          .collection('posts')
+          .where('feed', isEqualTo: currentFeed);
+    }
+    return query.orderBy('timestamp', descending: true).limit(50).snapshots();
   }
 
   Stream<DocumentSnapshot> getPostStream(String postId) {
@@ -342,6 +327,34 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<void> createPost(String title, String content, String feed) async {
+    if (userId == null) return;
+
+    String postFeed = feed == 'All Navy' ? 'All Navy' : command ?? '';
+
+    DocumentSnapshot userDoc =
+        await FirebaseFirestore.instance.collection('users').doc(userId).get();
+
+    Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+    String currentUserName = userData['userName'] as String? ?? '';
+    String currentProfileEmoji = userData['profileEmoji'] as String? ?? '🙂';
+
+    await FirebaseFirestore.instance.collection('posts').add({
+      'title': title,
+      'content': content,
+      'userId': userId,
+      'userName': currentUserName,
+      'command': command,
+      'feed': postFeed,
+      'points': 0,
+      'commentCount': 0,
+      'timestamp': FieldValue.serverTimestamp(),
+      'profileEmoji': currentProfileEmoji,
+    });
+
+    notifyListeners();
+  }
+
   Future<void> createComment(String postId, String content) async {
     if (userId == null) return;
 
@@ -349,8 +362,8 @@ class AppState extends ChangeNotifier {
         await FirebaseFirestore.instance.collection('users').doc(userId).get();
 
     Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
-    String currentUserName = userData['userName'] ?? '';
-    String currentProfileEmoji = userData['profileEmoji'] ?? '🙂';
+    String currentUserName = userData['userName'] as String? ?? '';
+    String currentProfileEmoji = userData['profileEmoji'] as String? ?? '🙂';
 
     DocumentReference commentRef =
         await FirebaseFirestore.instance.collection('comments').add({
@@ -436,9 +449,7 @@ class AppState extends ChangeNotifier {
           .get();
 
       if (!userDoc.exists) {
-        // If the document doesn't exist, create it
         await createUserDocument(userId!);
-        // Fetch the document again
         userDoc = await FirebaseFirestore.instance
             .collection('users')
             .doc(userId)
@@ -518,64 +529,64 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> deletePost(String postId) async {
-  if (userId == null) return;
+    if (userId == null) return;
 
-  try {
-    DocumentSnapshot postDoc = await FirebaseFirestore.instance
-        .collection('posts')
-        .doc(postId)
-        .get();
+    try {
+      DocumentSnapshot postDoc = await FirebaseFirestore.instance
+          .collection('posts')
+          .doc(postId)
+          .get();
 
-    if (postDoc.exists) {
-      Map<String, dynamic> postData = postDoc.data() as Map<String, dynamic>;
-      if (postData['userId'] == userId) {
-        // Delete the post
-        await FirebaseFirestore.instance
-            .collection('posts')
-            .doc(postId)
-            .delete();
+      if (postDoc.exists) {
+        Map<String, dynamic> postData = postDoc.data() as Map<String, dynamic>;
+        if (postData['userId'] == userId) {
+          // Delete the post
+          await FirebaseFirestore.instance
+              .collection('posts')
+              .doc(postId)
+              .delete();
 
-        // Delete all comments associated with the post
-        QuerySnapshot comments = await FirebaseFirestore.instance
-            .collection('comments')
-            .where('postId', isEqualTo: postId)
-            .get();
+          // Delete all comments associated with the post
+          QuerySnapshot comments = await FirebaseFirestore.instance
+              .collection('comments')
+              .where('postId', isEqualTo: postId)
+              .get();
 
-        for (DocumentSnapshot commentDoc in comments.docs) {
-          await commentDoc.reference.delete();
+          for (DocumentSnapshot commentDoc in comments.docs) {
+            await commentDoc.reference.delete();
+          }
+
+          // Remove the post from saved posts of all users
+          QuerySnapshot usersWithSavedPost = await FirebaseFirestore.instance
+              .collection('users')
+              .where('savedPosts', arrayContains: postId)
+              .get();
+
+          for (DocumentSnapshot userDoc in usersWithSavedPost.docs) {
+            List<String> savedPosts = List<String>.from(userDoc['savedPosts']);
+            savedPosts.remove(postId);
+            await userDoc.reference.update({'savedPosts': savedPosts});
+          }
+
+          // Update local state
+          if (savedPosts.contains(postId)) {
+            savedPosts.remove(postId);
+          }
+
+          notifyListeners();
+        } else {
+          throw Exception('You do not have permission to delete this post');
         }
-
-        // Remove the post from saved posts of all users
-        QuerySnapshot usersWithSavedPost = await FirebaseFirestore.instance
-            .collection('users')
-            .where('savedPosts', arrayContains: postId)
-            .get();
-
-        for (DocumentSnapshot userDoc in usersWithSavedPost.docs) {
-          List<String> savedPosts = List<String>.from(userDoc['savedPosts']);
-          savedPosts.remove(postId);
-          await userDoc.reference.update({'savedPosts': savedPosts});
-        }
-
-        // Update local state
-        if (savedPosts.contains(postId)) {
-          savedPosts.remove(postId);
-        }
-
-        notifyListeners();
       } else {
-        throw Exception('You do not have permission to delete this post');
+        throw Exception('Post not found');
       }
-    } else {
-      throw Exception('Post not found');
+    } catch (e) {
+      print('Error deleting post: $e');
+      throw e;
     }
-  } catch (e) {
-    print('Error deleting post: $e');
-    throw e;
   }
-}
 
-Future<void> deleteComment(String postId, String commentId) async {
+  Future<void> deleteComment(String postId, String commentId) async {
     if (userId == null) return;
 
     try {

@@ -135,8 +135,9 @@ class PostFeed extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final appState = Provider.of<AppState>(context);
     return StreamBuilder<QuerySnapshot>(
-      stream: _getPostStream(feedType, sortBy),
+      stream: appState.getPostsStream(feedType),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           print('Error in PostFeed: ${snapshot.error}');
@@ -162,18 +163,21 @@ class PostFeed extends StatelessWidget {
                   .doc(data['userId'])
                   .get(),
               builder: (context, userSnapshot) {
-                String userName = '@[deleted]';
+                String userName = '@anonymous';
                 String profileEmoji = '🫥';
-                if (userSnapshot.connectionState == ConnectionState.done &&
-                    userSnapshot.hasData) {
-                  final userData =
-                      userSnapshot.data!.data() as Map<String, dynamic>?;
-                  userName = userData?['userName'] as String? ?? '';
-                  profileEmoji = userData?['profileEmoji'] as String? ?? '🫥';
-                  if (userName.isEmpty) {
-                    userName = '@[deleted]';
+                if (userSnapshot.connectionState == ConnectionState.done) {
+                  if (userSnapshot.hasData && userSnapshot.data!.exists) {
+                    final userData =
+                        userSnapshot.data!.data() as Map<String, dynamic>?;
+                    userName = userData?['userName'] as String? ?? '';
+                    profileEmoji = userData?['profileEmoji'] as String? ?? '🫥';
+                    if (userName.isEmpty) {
+                      userName = '@anonymous';
+                    } else {
+                      userName = '@$userName';
+                    }
                   } else {
-                    userName = '@$userName';
+                    userName = '@[deleted]';
                   }
                 }
                 return PostCard(
@@ -192,26 +196,6 @@ class PostFeed extends StatelessWidget {
         );
       },
     );
-  }
-
-  Stream<QuerySnapshot> _getPostStream(String currentFeed, String sortBy) {
-    Query query;
-    if (currentFeed == 'All Navy') {
-      query = FirebaseFirestore.instance.collection('posts');
-    } else {
-      query = FirebaseFirestore.instance
-          .collection('posts')
-          .where('feed', isEqualTo: currentFeed);
-    }
-
-    if (sortBy == 'top') {
-      return query
-          .orderBy('timestamp', descending: true)
-          .limit(100)
-          .snapshots();
-    } else {
-      return query.orderBy('timestamp', descending: true).limit(50).snapshots();
-    }
   }
 
   double _calculateScore(DocumentSnapshot doc) {

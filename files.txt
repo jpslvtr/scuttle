@@ -1,3 +1,71 @@
+File: app/lib/about_screen.dart
+
+import 'package:flutter/material.dart';
+
+class AboutScreen extends StatelessWidget {
+  const AboutScreen({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Settings'),
+      ),
+      body: SingleChildScrollView(
+        padding: EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Welcome to Scuttle',
+              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 16),
+            _buildParagraph(
+              'Scuttle is an anonymous feed-based social app for service members to engage with other service members near them. As a Navy veteran, I initially focused on the Navy for this version.',
+            ),
+            SizedBox(height: 16),
+            Text(
+              'There are eight "zones," each with a generous radius:',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 8),
+            Text(
+              '• Norfolk\n• San Diego\n• Jacksonville\n• Pensacola\n• PNW\n• Japan\n• Hawaii\n• DMV',
+              style: TextStyle(fontSize: 18),
+            ),
+            SizedBox(height: 16),
+            _buildParagraph(
+              'I initially considered setting zones at the command level, but decided against it due to OPSEC. All users\' military status is verified through ID.me.',
+            ),
+            SizedBox(height: 16),
+            _buildParagraph(
+              'Blind exists for companies, Fizz for colleges, and while Yik Yak is no longer as widely used, Scuttle aims to fill a similar niche for service members. Whether you\'re temporarily on TDY and don\'t know anyone, or you want to connect with service members near you, Scuttle is here to help.',
+            ),
+            SizedBox(height: 16),
+            _buildParagraph(
+              'The main difference between our "All Navy" feed and the Navy subreddit is that everyone on Scuttle is a verified military member.',
+            ),
+            SizedBox(height: 16),
+            _buildParagraph(
+              'The app is still in development and may have some bugs. Feedback and comments are welcome. Please feel free to contact jpslvtr@gmail.com.\n',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildParagraph(String text) {
+    return Text(
+      text,
+      style: TextStyle(fontSize: 18),
+    );
+  }
+}
+
+=================================================================
+
 File: app/lib/app_state.dart
 
 import 'package:flutter/material.dart';
@@ -21,10 +89,10 @@ class AppState extends ChangeNotifier {
   bool isLocationPermissionChecked = false;
 
   static const Map<String, Map<String, dynamic>> zones = {
-    // 'Bay Area': {
-    //   'center': {'lat': 37.7749, 'lng': -122.4194},
-    //   'radius': 80467
-    // },
+    'Bay Area': {
+      'center': {'lat': 37.7749, 'lng': -122.4194},
+      'radius': 80467
+    },
     'Norfolk': {
       'center': {'lat': 36.8508, 'lng': -76.2859},
       'radius': 120700
@@ -223,27 +291,6 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> createPost(String title, String content, String feed) async {
-    if (userId == null) return;
-
-    String postFeed = feed == 'All Navy' ? 'Navy' : feed;
-
-    await FirebaseFirestore.instance.collection('posts').add({
-      'title': title,
-      'content': content,
-      'userId': userId,
-      'userName': userName,
-      'command': command,
-      'feed': postFeed,
-      'points': 0,
-      'commentCount': 0,
-      'timestamp': FieldValue.serverTimestamp(),
-      'profileEmoji': await getProfileEmoji(),
-    });
-
-    notifyListeners();
-  }
-
   Future<String> getProfileEmoji() async {
     DocumentSnapshot userDoc =
         await FirebaseFirestore.instance.collection('users').doc(userId).get();
@@ -344,6 +391,34 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<void> createPost(String title, String content, String feed) async {
+    if (userId == null) return;
+
+    String postFeed = feed == 'All Navy' ? 'Navy' : feed;
+
+    DocumentSnapshot userDoc =
+        await FirebaseFirestore.instance.collection('users').doc(userId).get();
+
+    Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+    String currentUserName = userData['userName'] as String? ?? '';
+    String currentProfileEmoji = userData['profileEmoji'] as String? ?? '🙂';
+
+    await FirebaseFirestore.instance.collection('posts').add({
+      'title': title,
+      'content': content,
+      'userId': userId,
+      'userName': currentUserName,
+      'command': command,
+      'feed': postFeed,
+      'points': 0,
+      'commentCount': 0,
+      'timestamp': FieldValue.serverTimestamp(),
+      'profileEmoji': currentProfileEmoji,
+    });
+
+    notifyListeners();
+  }
+
   Future<void> createComment(String postId, String content) async {
     if (userId == null) return;
 
@@ -351,8 +426,8 @@ class AppState extends ChangeNotifier {
         await FirebaseFirestore.instance.collection('users').doc(userId).get();
 
     Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
-    String currentUserName = userData['userName'] ?? '';
-    String currentProfileEmoji = userData['profileEmoji'] ?? '🙂';
+    String currentUserName = userData['userName'] as String? ?? '';
+    String currentProfileEmoji = userData['profileEmoji'] as String? ?? '🙂';
 
     DocumentReference commentRef =
         await FirebaseFirestore.instance.collection('comments').add({
@@ -713,6 +788,61 @@ Future<void> deleteComment(String postId, String commentId) async {
 
 =================================================================
 
+File: app/lib/guidelines_screen.dart
+
+import 'package:flutter/material.dart';
+
+class GuidelinesScreen extends StatelessWidget {
+  const GuidelinesScreen({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Settings'),
+      ),
+      body: SingleChildScrollView(
+        padding: EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Community Guidelines',
+              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 16),
+            _buildGuideline('No PII (Personally Identifiable Information).'),
+            _buildGuideline('Don\'t troll or be disrespectful to others.'),
+            _buildGuideline('No hate speech or discriminatory content.'),
+            _buildGuideline(
+                'No posting links to malicious sites or spreading malware.'),
+            _buildGuideline('No obscene or explicit content.'),
+            _buildGuideline('No promotion or glorification of violence.'),
+            _buildGuideline(
+                'No illegal activities or content that violates laws.'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGuideline(String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('• ',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          Expanded(child: Text(text, style: TextStyle(fontSize: 18))),
+        ],
+      ),
+    );
+  }
+}
+
+=================================================================
+
 File: app/lib/home_screen.dart
 
 import 'package:flutter/material.dart';
@@ -879,18 +1009,21 @@ class PostFeed extends StatelessWidget {
                   .doc(data['userId'])
                   .get(),
               builder: (context, userSnapshot) {
-                String userName = '@[deleted]';
+                String userName = '@anonymous';
                 String profileEmoji = '🫥';
-                if (userSnapshot.connectionState == ConnectionState.done &&
-                    userSnapshot.hasData) {
-                  final userData =
-                      userSnapshot.data!.data() as Map<String, dynamic>?;
-                  userName = userData?['userName'] as String? ?? '';
-                  profileEmoji = userData?['profileEmoji'] as String? ?? '🫥';
-                  if (userName.isEmpty) {
-                    userName = '@[deleted]';
+                if (userSnapshot.connectionState == ConnectionState.done) {
+                  if (userSnapshot.hasData && userSnapshot.data!.exists) {
+                    final userData =
+                        userSnapshot.data!.data() as Map<String, dynamic>?;
+                    userName = userData?['userName'] as String? ?? '';
+                    profileEmoji = userData?['profileEmoji'] as String? ?? '🫥';
+                    if (userName.isEmpty) {
+                      userName = '@anonymous';
+                    } else {
+                      userName = '@$userName';
+                    }
                   } else {
-                    userName = '@$userName';
+                    userName = '@[deleted]';
                   }
                 }
                 return PostCard(
@@ -1484,32 +1617,60 @@ class PostDetailScreen extends StatelessWidget {
                   Map<String, dynamic> postData =
                       snapshot.data!.data() as Map<String, dynamic>;
 
-                  return ListView(
-                    padding: EdgeInsets.all(16.0),
-                    children: [
-                      PostCard(
-                        title: postData['title'] ?? '',
-                        content: postData['content'] ?? '',
-                        commentCount: postData['commentCount'] ?? 0,
-                        timestamp:
-                            postData['timestamp']?.toDate() ?? DateTime.now(),
-                        postId: postId,
-                        userId: postData['userId'] ?? '',
-                        profileEmoji: postData['profileEmoji'] ?? '🙂',
-                        userName: '@${postData['userName'] ?? 'anonymous'}',
-                        isDetailView: true,
-                      ),
-                      Divider(),
-                      Text(
-                        'Comments',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      SizedBox(height: 8),
-                      CommentList(postId: postId),
-                    ],
+                  return FutureBuilder<DocumentSnapshot>(
+                    future: FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(postData['userId'])
+                        .get(),
+                    builder: (context, userSnapshot) {
+                      String userName = '@anonymous';
+                      String profileEmoji = '🫥';
+                      if (userSnapshot.connectionState ==
+                          ConnectionState.done) {
+                        if (userSnapshot.hasData && userSnapshot.data!.exists) {
+                          final userData = userSnapshot.data!.data()
+                              as Map<String, dynamic>?;
+                          userName = userData?['userName'] as String? ?? '';
+                          profileEmoji =
+                              userData?['profileEmoji'] as String? ?? '🫥';
+                          if (userName.isEmpty) {
+                            userName = '@anonymous';
+                          } else {
+                            userName = '@$userName';
+                          }
+                        } else {
+                          userName = '@[deleted]';
+                        }
+                      }
+
+                      return ListView(
+                        padding: EdgeInsets.all(16.0),
+                        children: [
+                          PostCard(
+                            title: postData['title'] ?? '',
+                            content: postData['content'] ?? '',
+                            commentCount: postData['commentCount'] ?? 0,
+                            timestamp: postData['timestamp']?.toDate() ??
+                                DateTime.now(),
+                            postId: postId,
+                            userId: postData['userId'] ?? '',
+                            profileEmoji: profileEmoji,
+                            userName: userName,
+                            isDetailView: true,
+                          ),
+                          Divider(),
+                          Text(
+                            'Comments',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          SizedBox(height: 8),
+                          CommentList(postId: postId),
+                        ],
+                      );
+                    },
                   );
                 },
               ),
@@ -1565,14 +1726,23 @@ class CommentList extends StatelessWidget {
                   return CircularProgressIndicator();
                 }
 
-                String userName = '@[deleted]';
+                String userName = '@anonymous';
                 String profileEmoji = '🫥';
 
-                if (userSnapshot.hasData && userSnapshot.data != null) {
-                  final userData =
-                      userSnapshot.data!.data() as Map<String, dynamic>?;
-                  userName = userData?['userName'] as String? ?? '';
-                  profileEmoji = userData?['profileEmoji'] as String? ?? '🫥';
+                if (userSnapshot.connectionState == ConnectionState.done) {
+                  if (userSnapshot.hasData && userSnapshot.data!.exists) {
+                    final userData =
+                        userSnapshot.data!.data() as Map<String, dynamic>?;
+                    userName = userData?['userName'] as String? ?? '';
+                    profileEmoji = userData?['profileEmoji'] as String? ?? '🫥';
+                    if (userName.isEmpty) {
+                      userName = '@anonymous';
+                    } else {
+                      userName = '@$userName';
+                    }
+                  } else {
+                    userName = '@[deleted]';
+                  }
                 }
 
                 return CommentCard(
@@ -1633,7 +1803,7 @@ class CommentCard extends StatelessWidget {
                     Text(profileEmoji),
                     SizedBox(width: 4),
                     Text(
-                      userName.isEmpty ? '@[deleted]' : '@$userName',
+                      userName,
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
@@ -1923,7 +2093,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Privacy Policy'),
+        title: Text('Settings'),
       ),
       body: SingleChildScrollView(
         padding: EdgeInsets.all(16.0),
@@ -1932,10 +2102,10 @@ class PrivacyPolicyScreen extends StatelessWidget {
           children: [
             Text(
               'PRIVACY POLICY',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
             ),
             SizedBox(height: 16),
-            Text(
+            _buildParagraph(
               'Welcome to Scuttle. We respect your privacy and are committed to protecting your personal data. This privacy policy explains how we collect, use, and safeguard your information when you use our app.',
             ),
             SizedBox(height: 16),
@@ -1952,7 +2122,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
             _buildSection('CHANGES TO THIS POLICY',
                 'We may update this policy from time to time. We will notify you of any significant changes.'),
             _buildSection('CONTACT US',
-                'If you have any questions about this privacy policy, please contact us at jpslvtr@gmail.com.'),
+                'If you have any questions about this privacy policy, please contact us at jpslvtr@gmail.com.\n'),
           ],
         ),
       ),
@@ -1965,12 +2135,19 @@ class PrivacyPolicyScreen extends StatelessWidget {
       children: [
         Text(
           title,
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
         ),
         SizedBox(height: 8),
-        Text(content),
+        _buildParagraph(content),
         SizedBox(height: 16),
       ],
+    );
+  }
+
+  Widget _buildParagraph(String text) {
+    return Text(
+      text,
+      style: TextStyle(fontSize: 18),
     );
   }
 }
@@ -2058,10 +2235,9 @@ class _ProfileScreenState extends State<ProfileScreen>
           return Text('Error loading profile: ${snapshot.error}');
         }
         final userData = snapshot.data ?? {};
-        final displayName =
-            userData['userName'] == null || userData['userName'].isEmpty
-                ? '@anonymous'
-                : '@${userData['userName']}';
+        final displayName = userData['userName']?.isEmpty ?? true
+            ? '@anonymous'
+            : '@${userData['userName']}';
         return Padding(
           padding: const EdgeInsets.all(16.0),
           child: Row(
@@ -2260,15 +2436,40 @@ class _ProfileScreenState extends State<ProfileScreen>
           itemCount: posts.length,
           itemBuilder: (context, index) {
             final post = posts[index].data() as Map<String, dynamic>;
-            return PostCard(
-              title: post['title'] ?? '',
-              content: post['content'] ?? '',
-              commentCount: post['commentCount'] ?? 0,
-              timestamp: post['timestamp']?.toDate() ?? DateTime.now(),
-              postId: posts[index].id,
-              userId: post['userId'] ?? '',
-              profileEmoji: post['profileEmoji'] ?? '🙂',
-              userName: '@${post['userName'] ?? 'anonymous'}',
+            return FutureBuilder<DocumentSnapshot>(
+              future: FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(post['userId'])
+                  .get(),
+              builder: (context, userSnapshot) {
+                String userName = '@anonymous';
+                String profileEmoji = '🫥';
+                if (userSnapshot.connectionState == ConnectionState.done) {
+                  if (userSnapshot.hasData && userSnapshot.data!.exists) {
+                    final userData =
+                        userSnapshot.data!.data() as Map<String, dynamic>?;
+                    userName = userData?['userName'] as String? ?? '';
+                    profileEmoji = userData?['profileEmoji'] as String? ?? '🫥';
+                    if (userName.isEmpty) {
+                      userName = '@anonymous';
+                    } else {
+                      userName = '@$userName';
+                    }
+                  } else {
+                    userName = '@[deleted]';
+                  }
+                }
+                return PostCard(
+                  title: post['title'] ?? '',
+                  content: post['content'] ?? '',
+                  commentCount: post['commentCount'] ?? 0,
+                  timestamp: post['timestamp']?.toDate() ?? DateTime.now(),
+                  postId: posts[index].id,
+                  userId: post['userId'] ?? '',
+                  profileEmoji: profileEmoji,
+                  userName: userName,
+                );
+              },
             );
           },
         );
@@ -2663,7 +2864,9 @@ import 'package:provider/provider.dart';
 import 'app_state.dart';
 import 'login_screen.dart';
 import 'zone_selection_screen.dart';
-import 'privacy_policy_screen.dart'; // Add this import
+import 'privacy_policy_screen.dart';
+import 'about_screen.dart';
+import 'guidelines_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -2688,19 +2891,23 @@ class SettingsScreen extends StatelessWidget {
           ),
           _buildSectionHeader('App'),
           ListTile(
-            leading: Icon(Icons.notes),
+            leading: Icon(Icons.info),
             title: Text('About'),
             onTap: () {
-              // TODO: Show community guidelines
-              print('Community guidelines tapped');
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => AboutScreen()),
+              );
             },
           ),
           ListTile(
             leading: Icon(Icons.people),
             title: Text('Guidelines'),
             onTap: () {
-              // TODO: Show community guidelines
-              print('Community guidelines tapped');
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => GuidelinesScreen()),
+              );
             },
           ),
           ListTile(

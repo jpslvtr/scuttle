@@ -77,10 +77,9 @@ class _ProfileScreenState extends State<ProfileScreen>
           return Text('Error loading profile: ${snapshot.error}');
         }
         final userData = snapshot.data ?? {};
-        final displayName =
-            userData['userName'] == null || userData['userName'].isEmpty
-                ? '@anonymous'
-                : '@${userData['userName']}';
+        final displayName = userData['userName']?.isEmpty ?? true
+            ? '@anonymous'
+            : '@${userData['userName']}';
         return Padding(
           padding: const EdgeInsets.all(16.0),
           child: Row(
@@ -279,15 +278,40 @@ class _ProfileScreenState extends State<ProfileScreen>
           itemCount: posts.length,
           itemBuilder: (context, index) {
             final post = posts[index].data() as Map<String, dynamic>;
-            return PostCard(
-              title: post['title'] ?? '',
-              content: post['content'] ?? '',
-              commentCount: post['commentCount'] ?? 0,
-              timestamp: post['timestamp']?.toDate() ?? DateTime.now(),
-              postId: posts[index].id,
-              userId: post['userId'] ?? '',
-              profileEmoji: post['profileEmoji'] ?? '🙂',
-              userName: '@${post['userName'] ?? 'anonymous'}',
+            return FutureBuilder<DocumentSnapshot>(
+              future: FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(post['userId'])
+                  .get(),
+              builder: (context, userSnapshot) {
+                String userName = '@anonymous';
+                String profileEmoji = '🫥';
+                if (userSnapshot.connectionState == ConnectionState.done) {
+                  if (userSnapshot.hasData && userSnapshot.data!.exists) {
+                    final userData =
+                        userSnapshot.data!.data() as Map<String, dynamic>?;
+                    userName = userData?['userName'] as String? ?? '';
+                    profileEmoji = userData?['profileEmoji'] as String? ?? '🫥';
+                    if (userName.isEmpty) {
+                      userName = '@anonymous';
+                    } else {
+                      userName = '@$userName';
+                    }
+                  } else {
+                    userName = '@[deleted]';
+                  }
+                }
+                return PostCard(
+                  title: post['title'] ?? '',
+                  content: post['content'] ?? '',
+                  commentCount: post['commentCount'] ?? 0,
+                  timestamp: post['timestamp']?.toDate() ?? DateTime.now(),
+                  postId: posts[index].id,
+                  userId: post['userId'] ?? '',
+                  profileEmoji: profileEmoji,
+                  userName: userName,
+                );
+              },
             );
           },
         );
