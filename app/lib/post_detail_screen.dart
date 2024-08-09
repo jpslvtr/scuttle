@@ -66,6 +66,15 @@ class PostDetailScreen extends StatelessWidget {
                       return ListView(
                         padding: EdgeInsets.all(16.0),
                         children: [
+                          Text(
+                            'Feed: ${postData['feed'] ?? 'Unknown'}',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue[800],
+                            ),
+                          ),
+                          SizedBox(height: 8),
                           PostCard(
                             title: postData['title'] ?? '',
                             content: postData['content'] ?? '',

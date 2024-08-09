@@ -6,4 +6,15 @@ Please read the attached files thoroughly.
 - Occam's razor. Simple code is preferred.
 - Make no assumptions. If you aren't certain about something, ask.
 
-I want to be able to test and see feeds from other zones. How do I fake my location?
+I want to be able to test and see feeds from other zones once this app is on the app store. How do I fake my location in the iphone simulator?
+
+Norfolk: 36.8508, -76.2859
+San Diego: 32.7157, -117.1611
+Jacksonville: 30.3322, -81.6557
+Pensacola: 30.4213, -87.2169
+Pacific Northwest (Seattle): 47.6062, -122.3321
+Japan (Tokyo): 35.6762, 139.6503
+Hawaii (Honolulu): 21.3069, -157.8583
+National Capital Region (Washington D.C.): 38.9072, -77.0369
+
+
