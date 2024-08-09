@@ -20,7 +20,7 @@ class AppState extends ChangeNotifier {
   bool isIdMeVerified = false;
 
   static const Map<String, Map<String, dynamic>> zones = {
-    'TEST: Bay Area': {
+    'Sample Zone': {
       'center': {'lat': 37.7749, 'lng': -122.4194},
       'radius': 80467
     },
