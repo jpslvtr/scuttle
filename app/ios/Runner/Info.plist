@@ -51,6 +51,10 @@
     <string>This app needs access to location to recommend your command zone.</string>
     <key>NSLocationAlwaysUsageDescription</key>
     <string>This app needs access to location to recommend your command zone.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>Scuttle needs access to your photo library to allow you to select images for your posts.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Scuttle needs access to your camera to allow you to take photos for your posts.</string>
     <key>UILaunchStoryboardName</key>
     <string>LaunchScreen</string>
     <key>UIMainStoryboardFile</key>

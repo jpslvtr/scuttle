@@ -72,6 +72,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'dart:io';
 
 class AppState extends ChangeNotifier {
   String? userId;
@@ -129,6 +131,24 @@ class AppState extends ChangeNotifier {
   };
 
   AppState({this.userId, this.command, this.userName});
+
+  Future<String?> uploadImage(File image) async {
+    if (userId == null) return null;
+
+    try {
+      final ref = FirebaseStorage.instance
+          .ref()
+          .child('post_images')
+          .child('${DateTime.now().toIso8601String()}_$userId.jpg');
+
+      await ref.putFile(image);
+      final url = await ref.getDownloadURL();
+      return url;
+    } catch (e) {
+      print('Error uploading image: $e');
+      return null;
+    }
+  }
 
   Future<void> initializeUser(String uid) async {
     userId = uid;
@@ -579,7 +599,8 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> createPost(String title, String content, String feed) async {
+  Future<void> createPost(String title, String content, String feed,
+      {File? image}) async {
     if (userId == null) return;
 
     String postFeed = feed == 'All Navy' ? 'All Navy' : command ?? '';
@@ -590,6 +611,11 @@ class AppState extends ChangeNotifier {
     Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
     String currentUserName = userData['userName'] as String? ?? '';
     String currentProfileEmoji = userData['profileEmoji'] as String? ?? '🙂';
+
+    String? imageUrl;
+    if (image != null) {
+      imageUrl = await uploadImage(image);
+    }
 
     await FirebaseFirestore.instance.collection('posts').add({
       'title': title,
@@ -602,6 +628,7 @@ class AppState extends ChangeNotifier {
       'commentCount': 0,
       'timestamp': FieldValue.serverTimestamp(),
       'profileEmoji': currentProfileEmoji,
+      'imageUrl': imageUrl,
     });
 
     // Award 1 point for creating a post
@@ -1256,12 +1283,8 @@ class PostFeed extends StatelessWidget {
 
 File: app/lib/login_screen.dart
 
-// File: app/lib/login_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_webview_plugin/flutter_webview_plugin.dart';
 import 'package:http/http.dart' as http;
@@ -1284,67 +1307,13 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
 
-  Future<UserCredential?> signInWithGoogle() async {
-    try {
-      // Trigger the authentication flow
-      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
-
-      if (googleUser == null) {
-        throw Exception('Google Sign In was canceled');
-      }
-
-      // Obtain the auth details from the request
-      final GoogleSignInAuthentication googleAuth =
-          await googleUser.authentication;
-
-      // Create a new credential
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-
-      // Sign in to Firebase with the Google credential
-      final UserCredential userCredential =
-          await FirebaseAuth.instance.signInWithCredential(credential);
-
-      return userCredential;
-    } catch (e) {
-      print('Error in signInWithGoogle: $e');
-      return null;
-    }
-  }
-
-  Future<UserCredential?> signInWithApple() async {
-    try {
-      final appleCredential = await SignInWithApple.getAppleIDCredential(
-        scopes: [
-          AppleIDAuthorizationScopes.email,
-          AppleIDAuthorizationScopes.fullName,
-        ],
-      );
-
-      final oauthCredential = OAuthProvider("apple.com").credential(
-        idToken: appleCredential.identityToken,
-        accessToken: appleCredential.authorizationCode,
-      );
-
-      return await FirebaseAuth.instance.signInWithCredential(oauthCredential);
-    } catch (e) {
-      print('Error in signInWithApple: $e');
-      return null;
-    }
-  }
-
   Future<UserCredential?> signInWithIdMe() async {
     print("Starting ID.me sign-in process");
     const String clientId = '0d399b555eb4574e6b761b7d2c103662';
     const String redirectUri = 'com.park.scuttle://callback';
     const String authorizationEndpoint = 'https://api.id.me/oauth/authorize';
 
-    // Generate code verifier
     final String codeVerifier = _generateRandomString(128);
-
-    // Generate code challenge
     final List<int> bytes = utf8.encode(codeVerifier);
     final Digest digest = sha256.convert(bytes);
     final String codeChallenge =
@@ -1363,13 +1332,11 @@ class _LoginScreenState extends State<LoginScreen> {
       print("Initiating ID.me authentication");
       print("Authorization URL: $authorizationUrl");
 
-      // Present the dialog to the user
       final result = await FlutterWebAuth.authenticate(
           url: authorizationUrl, callbackUrlScheme: "com.park.scuttle");
 
       print("Received result from FlutterWebAuth: $result");
 
-      // Extract code from resulting url
       final uri = Uri.parse(result);
       final code = uri.queryParameters['code'];
       final error = uri.queryParameters['error'];
@@ -1390,7 +1357,6 @@ class _LoginScreenState extends State<LoginScreen> {
       print("Authorization code received: $code");
 
       print("Exchanging authorization code for access token");
-      // Exchange authorization code for access token
       final tokenResponse = await http.post(
         Uri.parse('https://api.id.me/oauth/token'),
         body: {
@@ -1412,7 +1378,6 @@ class _LoginScreenState extends State<LoginScreen> {
         final accessToken = tokenData['access_token'];
 
         print("Calling Firebase Function");
-        // Call the Firebase Function to exchange the ID.me token for a Firebase custom token
         final callable =
             FirebaseFunctions.instance.httpsCallable('createFirebaseToken');
         final result = await callable.call({'idmeToken': accessToken});
@@ -1422,12 +1387,10 @@ class _LoginScreenState extends State<LoginScreen> {
         final customToken = result.data['customToken'];
 
         print("Firebase custom token obtained");
-        // Sign in to Firebase with the custom token
         final userCredential =
             await FirebaseAuth.instance.signInWithCustomToken(customToken);
 
         print("Signed in to Firebase successfully");
-        // Set ID.me verification status
         await Provider.of<AppState>(context, listen: false)
             .setIdMeVerified(true);
 
@@ -1487,7 +1450,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final random = Random.secure();
     return List.generate(length, (index) => chars[random.nextInt(chars.length)])
         .join();
-  } 
+  }
 
   void _handleSignIn(Future<UserCredential?> Function() signInMethod) async {
     if (_isLoading) return;
@@ -1502,18 +1465,14 @@ class _LoginScreenState extends State<LoginScreen> {
         final user = userCredential.user!;
         final appState = Provider.of<AppState>(context, listen: false);
 
-        // Check if the user document already exists
         bool userExists = await appState.checkUserExists(user.uid);
 
         if (!userExists) {
-          // Create user document in Firestore
           await appState.createUserDocument(user.uid);
         }
 
-        // Initialize user data
         await appState.initializeUser(user.uid);
 
-        // Navigate to ZoneSelectionScreen
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
             builder: (context) => ZoneSelectionScreen(isInitialSetup: true),
@@ -1547,45 +1506,25 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(
-                'Scuttle',
-                style: TextStyle(
-                  fontSize: 48,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.blue[800],
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Image.asset(
+                    'assets/AppIcon-1024-Transparent.png',
+                    height: 64,
+                    width: 64,
+                  ),
+                  Text(
+                    'Scuttle',
+                    style: TextStyle(
+                      fontSize: 48,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue[800],
+                    ),
+                  ),
+                ],
               ),
               SizedBox(height: 50),
-              _buildSignInButton(
-                onPressed:
-                    _isLoading ? null : () => _handleSignIn(signInWithGoogle),
-                icon: Image.asset(
-                  'assets/google_logo.png',
-                  height: 24.0,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Icon(Icons.android, size: 24, color: Colors.green);
-                  },
-                ),
-                text: 'Sign in with Google',
-              ),
-              SizedBox(height: 20),
-              FutureBuilder<bool>(
-                future: SignInWithApple.isAvailable(),
-                builder: (context, snapshot) {
-                  if (snapshot.data == true) {
-                    return _buildSignInButton(
-                      onPressed: _isLoading
-                          ? null
-                          : () => _handleSignIn(signInWithApple),
-                      icon: Icon(Icons.apple, size: 24, color: Colors.black),
-                      text: 'Sign in with Apple',
-                    );
-                  } else {
-                    return SizedBox.shrink();
-                  }
-                },
-              ),
-              SizedBox(height: 20),
               _buildSignInButton(
                 onPressed:
                     _isLoading ? null : () => _handleSignIn(signInWithIdMe),
@@ -1785,6 +1724,7 @@ class PostCard extends StatelessWidget {
   final String profileEmoji;
   final String userName;
   final bool isDetailView;
+  final String? imageUrl;
 
   const PostCard({
     Key? key,
@@ -1797,6 +1737,7 @@ class PostCard extends StatelessWidget {
     required this.profileEmoji,
     required this.userName,
     this.isDetailView = false,
+    this.imageUrl,
   }) : super(key: key);
 
   @override
@@ -1871,9 +1812,24 @@ class PostCard extends StatelessWidget {
               SizedBox(height: 4),
               Text(
                 content,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
+                maxLines: isDetailView ? null : 3,
+                overflow:
+                    isDetailView ? TextOverflow.visible : TextOverflow.ellipsis,
               ),
+              if (imageUrl != null) ...[
+                SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    imageUrl!,
+                    fit: BoxFit.contain,
+                    width: double.infinity,
+                    height: isDetailView
+                        ? null
+                        : 200, // Set a fixed height for feed view
+                  ),
+                ),
+              ],
               SizedBox(height: 8),
               StreamBuilder<DocumentSnapshot>(
                 stream: appState.getPostStream(postId),
@@ -1935,7 +1891,7 @@ class PostCard extends StatelessWidget {
       ),
     );
   }
-
+  
   void _showDeleteConfirmation(BuildContext context, AppState appState) {
     showDialog(
       context: context,
@@ -1989,8 +1945,6 @@ String getRelativeTime(DateTime dateTime) {
 =================================================================
 
 File: app/lib/post_detail_screen.dart
-
-// File: app/lib/post_detail_screen.dart
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -2071,6 +2025,7 @@ class PostDetailScreen extends StatelessWidget {
                             profileEmoji: profileEmoji,
                             userName: userName,
                             isDetailView: true,
+                            imageUrl: postData['imageUrl'],
                           ),
                           Divider(),
                           Text(
@@ -2091,6 +2046,32 @@ class PostDetailScreen extends StatelessWidget {
             ),
             CommentInput(postId: postId),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class FullScreenImage extends StatelessWidget {
+  final String imageUrl;
+
+  const FullScreenImage({Key? key, required this.imageUrl}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: GestureDetector(
+        onTap: () => Navigator.of(context).pop(),
+        child: Center(
+          child: Hero(
+            tag: imageUrl,
+            child: Image.network(
+              imageUrl,
+              fit: BoxFit.contain,
+              width: double.infinity,
+              height: double.infinity,
+            ),
+          ),
         ),
       ),
     );
@@ -2323,21 +2304,6 @@ class CommentCard extends StatelessWidget {
   }
 }
 
-String getRelativeTime(DateTime dateTime) {
-  final now = DateTime.now();
-  final difference = now.difference(dateTime);
-
-  if (difference.inSeconds < 60) {
-    return 'Now';
-  } else if (difference.inMinutes < 60) {
-    return '${difference.inMinutes} min';
-  } else if (difference.inHours < 24) {
-    return '${difference.inHours} hr';
-  } else {
-    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'}';
-  }
-}
-
 class CommentInput extends StatefulWidget {
   final String postId;
 
@@ -2390,12 +2356,29 @@ class _CommentInputState extends State<CommentInput> {
   }
 }
 
+String getRelativeTime(DateTime dateTime) {
+  final now = DateTime.now();
+  final difference = now.difference(dateTime);
+
+  if (difference.inSeconds < 60) {
+    return 'Now';
+  } else if (difference.inMinutes < 60) {
+    return '${difference.inMinutes} min';
+  } else if (difference.inHours < 24) {
+    return '${difference.inHours} hr';
+  } else {
+    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'}';
+  }
+}
+
 =================================================================
 
 File: app/lib/post_screen.dart
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 import 'app_state.dart';
 
 class PostScreen extends StatefulWidget {
@@ -2410,18 +2393,53 @@ class PostScreen extends StatefulWidget {
 class _PostScreenState extends State<PostScreen> {
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _bodyController = TextEditingController();
+  File? _image;
+
+  Future<void> _getImage() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+
+    setState(() {
+      if (pickedFile != null) {
+        _image = File(pickedFile.path);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    final appState = Provider.of<AppState>(context);
+    final feedName = widget.currentFeed == 'All Navy'
+        ? 'All Navy'
+        : appState.command ?? 'Local Feed';
+
     return Scaffold(
       appBar: AppBar(
-        title: Text('Create Post'),
+        title: Text('Create Post in $feedName'),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16.0),
           children: [
+            Card(
+              color: Colors.blue[50],
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.blue[800]),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Your post will appear in the $feedName feed',
+                        style: TextStyle(color: Colors.blue[800]),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            SizedBox(height: 16),
             TextField(
               controller: _titleController,
               decoration: InputDecoration(
@@ -2440,41 +2458,61 @@ class _PostScreenState extends State<PostScreen> {
               maxLines: 5,
             ),
             SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: _getImage,
+              icon: Icon(Icons.add_photo_alternate),
+              label: Text('Add Image'),
+            ),
+            if (_image != null) ...[
+              SizedBox(height: 16),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.file(_image!, height: 200, fit: BoxFit.cover),
+              ),
+            ],
+            SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                  },
-                  child: Text('Cancel'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.grey,
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                    child: Text('Cancel'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.grey,
+                    ),
                   ),
                 ),
-                ElevatedButton(
-                  onPressed: () async {
-                    if (_titleController.text.isNotEmpty &&
-                        _bodyController.text.isNotEmpty) {
-                      await Provider.of<AppState>(context, listen: false)
-                          .createPost(
-                        _titleController.text,
-                        _bodyController.text,
-                        widget.currentFeed,
-                      );
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Post created successfully')),
-                      );
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                            content:
-                                Text('Please enter both title and content')),
-                      );
-                    }
-                  },
-                  child: Text('Post'),
+                SizedBox(width: 16),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      if (_titleController.text.isNotEmpty &&
+                          _bodyController.text.isNotEmpty) {
+                        await appState.createPost(
+                          _titleController.text,
+                          _bodyController.text,
+                          widget.currentFeed,
+                          image: _image,
+                        );
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                              content: Text(
+                                  'Post created successfully in $feedName')),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                              content:
+                                  Text('Please enter both title and content')),
+                        );
+                      }
+                    },
+                    child: Text('Post'),
+                  ),
                 ),
               ],
             ),
@@ -3750,6 +3788,10 @@ File: app/ios/Runner/Info.plist
     <string>This app needs access to location to recommend your command zone.</string>
     <key>NSLocationAlwaysUsageDescription</key>
     <string>This app needs access to location to recommend your command zone.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>Scuttle needs access to your photo library to allow you to select images for your posts.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Scuttle needs access to your camera to allow you to take photos for your posts.</string>
     <key>UILaunchStoryboardName</key>
     <string>LaunchScreen</string>
     <key>UIMainStoryboardFile</key>
@@ -3869,6 +3911,8 @@ dependencies:
   cloud_functions: ^4.3.2
   crypto: ^3.0.1
   flutter_web_auth: ^0.5.0
+  image_picker: ^0.8.7+5
+  firebase_storage: ^11.2.2
   
 dev_dependencies:
   flutter_test:
@@ -3911,6 +3955,21 @@ service cloud.firestore {
                     (resource.data.userId == request.auth.uid || 
                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points']));
       allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+  }
+}
+
+Firestore storage rules
+
+rules_version = '2';
+
+// Craft rules based on data in your Firestore database
+// allow write: if firestore.get(
+//    /databases/(default)/documents/users/$(request.auth.uid)).data.isAdmin;
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
     }
   }
 }

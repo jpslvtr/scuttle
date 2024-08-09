@@ -1,5 +1,3 @@
-// File: app/lib/post_detail_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
@@ -79,6 +77,7 @@ class PostDetailScreen extends StatelessWidget {
                             profileEmoji: profileEmoji,
                             userName: userName,
                             isDetailView: true,
+                            imageUrl: postData['imageUrl'],
                           ),
                           Divider(),
                           Text(
@@ -99,6 +98,32 @@ class PostDetailScreen extends StatelessWidget {
             ),
             CommentInput(postId: postId),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class FullScreenImage extends StatelessWidget {
+  final String imageUrl;
+
+  const FullScreenImage({Key? key, required this.imageUrl}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: GestureDetector(
+        onTap: () => Navigator.of(context).pop(),
+        child: Center(
+          child: Hero(
+            tag: imageUrl,
+            child: Image.network(
+              imageUrl,
+              fit: BoxFit.contain,
+              width: double.infinity,
+              height: double.infinity,
+            ),
+          ),
         ),
       ),
     );
@@ -331,21 +356,6 @@ class CommentCard extends StatelessWidget {
   }
 }
 
-String getRelativeTime(DateTime dateTime) {
-  final now = DateTime.now();
-  final difference = now.difference(dateTime);
-
-  if (difference.inSeconds < 60) {
-    return 'Now';
-  } else if (difference.inMinutes < 60) {
-    return '${difference.inMinutes} min';
-  } else if (difference.inHours < 24) {
-    return '${difference.inHours} hr';
-  } else {
-    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'}';
-  }
-}
-
 class CommentInput extends StatefulWidget {
   final String postId;
 
@@ -395,5 +405,20 @@ class _CommentInputState extends State<CommentInput> {
   void dispose() {
     _commentController.dispose();
     super.dispose();
+  }
+}
+
+String getRelativeTime(DateTime dateTime) {
+  final now = DateTime.now();
+  final difference = now.difference(dateTime);
+
+  if (difference.inSeconds < 60) {
+    return 'Now';
+  } else if (difference.inMinutes < 60) {
+    return '${difference.inMinutes} min';
+  } else if (difference.inHours < 24) {
+    return '${difference.inHours} hr';
+  } else {
+    return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'}';
   }
 }

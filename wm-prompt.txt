@@ -6,6 +6,4 @@ Please read the attached files thoroughly.
 - Occam's razor. Simple code is preferred.
 - Make no assumptions. If you aren't certain about something, ask.
 
-I've set up auth with google, apple, and id.me. can you remove the google and apple buttons in the login page? I just want id.me
-
-And is there any way to put app/assets/AppIcon-1024.png in the login page as well? To the left of the name, Scuttle?
+Can you let posts have images too?

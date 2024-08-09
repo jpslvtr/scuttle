@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'dart:io';
 
 class AppState extends ChangeNotifier {
   String? userId;
@@ -59,6 +61,24 @@ class AppState extends ChangeNotifier {
   };
 
   AppState({this.userId, this.command, this.userName});
+
+  Future<String?> uploadImage(File image) async {
+    if (userId == null) return null;
+
+    try {
+      final ref = FirebaseStorage.instance
+          .ref()
+          .child('post_images')
+          .child('${DateTime.now().toIso8601String()}_$userId.jpg');
+
+      await ref.putFile(image);
+      final url = await ref.getDownloadURL();
+      return url;
+    } catch (e) {
+      print('Error uploading image: $e');
+      return null;
+    }
+  }
 
   Future<void> initializeUser(String uid) async {
     userId = uid;
@@ -509,7 +529,8 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> createPost(String title, String content, String feed) async {
+  Future<void> createPost(String title, String content, String feed,
+      {File? image}) async {
     if (userId == null) return;
 
     String postFeed = feed == 'All Navy' ? 'All Navy' : command ?? '';
@@ -520,6 +541,11 @@ class AppState extends ChangeNotifier {
     Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
     String currentUserName = userData['userName'] as String? ?? '';
     String currentProfileEmoji = userData['profileEmoji'] as String? ?? '🙂';
+
+    String? imageUrl;
+    if (image != null) {
+      imageUrl = await uploadImage(image);
+    }
 
     await FirebaseFirestore.instance.collection('posts').add({
       'title': title,
@@ -532,6 +558,7 @@ class AppState extends ChangeNotifier {
       'commentCount': 0,
       'timestamp': FieldValue.serverTimestamp(),
       'profileEmoji': currentProfileEmoji,
+      'imageUrl': imageUrl, // Include the imageUrl in the post data
     });
 
     // Award 1 point for creating a post

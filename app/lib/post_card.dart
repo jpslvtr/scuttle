@@ -14,6 +14,7 @@ class PostCard extends StatelessWidget {
   final String profileEmoji;
   final String userName;
   final bool isDetailView;
+  final String? imageUrl;
 
   const PostCard({
     Key? key,
@@ -26,6 +27,7 @@ class PostCard extends StatelessWidget {
     required this.profileEmoji,
     required this.userName,
     this.isDetailView = false,
+    this.imageUrl,
   }) : super(key: key);
 
   @override
@@ -100,9 +102,24 @@ class PostCard extends StatelessWidget {
               SizedBox(height: 4),
               Text(
                 content,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
+                maxLines: isDetailView ? null : 3,
+                overflow:
+                    isDetailView ? TextOverflow.visible : TextOverflow.ellipsis,
               ),
+              if (imageUrl != null) ...[
+                SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    imageUrl!,
+                    fit: BoxFit.contain,
+                    width: double.infinity,
+                    height: isDetailView
+                        ? null
+                        : 200, // Set a fixed height for feed view
+                  ),
+                ),
+              ],
               SizedBox(height: 8),
               StreamBuilder<DocumentSnapshot>(
                 stream: appState.getPostStream(postId),
@@ -164,7 +181,7 @@ class PostCard extends StatelessWidget {
       ),
     );
   }
-
+  
   void _showDeleteConfirmation(BuildContext context, AppState appState) {
     showDialog(
       context: context,

@@ -189,6 +189,7 @@ class PostFeed extends StatelessWidget {
                   userId: data['userId'] ?? '',
                   profileEmoji: profileEmoji,
                   userName: userName,
+                  imageUrl: data['imageUrl'], // Pass the imageUrl to PostCard
                 );
               },
             );
