@@ -6,4 +6,4 @@ Please read the attached files thoroughly.
 - Occam's razor. Simple code is preferred.
 - Make no assumptions. If you aren't certain about something, ask.
 
-Can you let posts have images too?
+I want to be able to test and see feeds from other zones. How do I fake my location?

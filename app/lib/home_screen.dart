@@ -15,65 +15,61 @@ class HomeScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         leading: Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: Center(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.star, color: Colors.yellow[700], size: 18),
-                SizedBox(width: 2),
-                Text(
+          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+          child: Row(
+            children: [
+              Icon(Icons.star, color: Colors.yellow[700], size: 18),
+              SizedBox(width: 2),
+              Expanded(
+                child: Text(
                   '${appState.userPoints}',
                   style: TextStyle(
                     color: Colors.blue[800],
                     fontWeight: FontWeight.bold,
-                    fontSize: 18,
+                    fontSize: 16,
                   ),
+                  overflow: TextOverflow.ellipsis,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
-        title: Padding(
-          padding: EdgeInsets.only(right: 40),
+        leadingWidth: 70,
+        title: PopupMenuButton<String>(
+          initialValue: appState.currentFeed,
+          onSelected: (String newValue) {
+            appState.setCurrentFeed(newValue);
+          },
+          itemBuilder: (BuildContext context) =>
+              appState.getAvailableFeeds().map((String feed) {
+            return PopupMenuItem<String>(
+              value: feed,
+              child: Text(feed),
+            );
+          }).toList(),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              PopupMenuButton<String>(
-                initialValue: appState.currentFeed,
-                onSelected: (String newValue) {
-                  appState.setCurrentFeed(newValue);
-                },
-                itemBuilder: (BuildContext context) =>
-                    appState.getAvailableFeeds().map((String feed) {
-                  return PopupMenuItem<String>(
-                    value: feed,
-                    child: Text(feed),
-                  );
-                }).toList(),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.arrow_drop_down, color: Colors.blue[800]),
-                    Text(
-                      appState.currentFeed,
-                      style: TextStyle(
-                        color: Colors.blue[800],
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
+              Icon(Icons.arrow_drop_down, color: Colors.blue[800]),
+              Flexible(
+                child: Text(
+                  appState.currentFeed,
+                  style: TextStyle(
+                    color: Colors.blue[800],
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
           ),
         ),
         actions: [
-          Container(
-            margin: EdgeInsets.only(right: 10),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8.0),
             child: ElevatedButton(
-              child: Icon(Icons.add, color: Colors.white),
+              child: Icon(Icons.add, color: Colors.white, size: 20),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.blue[800],
                 foregroundColor: Colors.white,
@@ -81,7 +77,7 @@ class HomeScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 padding: EdgeInsets.all(8),
-                minimumSize: Size(40, 40),
+                minimumSize: Size(36, 36),
               ),
               onPressed: () {
                 Navigator.push(
@@ -154,46 +150,56 @@ class PostFeed extends StatelessWidget {
               .sort((a, b) => _calculateScore(b).compareTo(_calculateScore(a)));
         }
 
-        return ListView(
-          children: posts.map((DocumentSnapshot document) {
-            Map<String, dynamic> data = document.data() as Map<String, dynamic>;
-            return FutureBuilder<DocumentSnapshot>(
-              future: FirebaseFirestore.instance
-                  .collection('users')
-                  .doc(data['userId'])
-                  .get(),
-              builder: (context, userSnapshot) {
-                String userName = '@anonymous';
-                String profileEmoji = '🫥';
-                if (userSnapshot.connectionState == ConnectionState.done) {
-                  if (userSnapshot.hasData && userSnapshot.data!.exists) {
-                    final userData =
-                        userSnapshot.data!.data() as Map<String, dynamic>?;
-                    userName = userData?['userName'] as String? ?? '';
-                    profileEmoji = userData?['profileEmoji'] as String? ?? '🫥';
-                    if (userName.isEmpty) {
-                      userName = '@anonymous';
+        return RefreshIndicator(
+          onRefresh: () async {
+            // Trigger a refresh of the stream
+            await Future.delayed(Duration(seconds: 1)); // Simulated delay
+            // The StreamBuilder will automatically update when the stream emits a new value
+          },
+          child: ListView(
+            physics: AlwaysScrollableScrollPhysics(),
+            children: posts.map((DocumentSnapshot document) {
+              Map<String, dynamic> data =
+                  document.data() as Map<String, dynamic>;
+              return FutureBuilder<DocumentSnapshot>(
+                future: FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(data['userId'])
+                    .get(),
+                builder: (context, userSnapshot) {
+                  String userName = '@anonymous';
+                  String profileEmoji = '🫥';
+                  if (userSnapshot.connectionState == ConnectionState.done) {
+                    if (userSnapshot.hasData && userSnapshot.data!.exists) {
+                      final userData =
+                          userSnapshot.data!.data() as Map<String, dynamic>?;
+                      userName = userData?['userName'] as String? ?? '';
+                      profileEmoji =
+                          userData?['profileEmoji'] as String? ?? '🫥';
+                      if (userName.isEmpty) {
+                        userName = '@anonymous';
+                      } else {
+                        userName = '@$userName';
+                      }
                     } else {
-                      userName = '@$userName';
+                      userName = '@[deleted]';
                     }
-                  } else {
-                    userName = '@[deleted]';
                   }
-                }
-                return PostCard(
-                  title: data['title'] ?? '',
-                  content: data['content'] ?? '',
-                  commentCount: data['commentCount'] ?? 0,
-                  timestamp: data['timestamp']?.toDate() ?? DateTime.now(),
-                  postId: document.id,
-                  userId: data['userId'] ?? '',
-                  profileEmoji: profileEmoji,
-                  userName: userName,
-                  imageUrl: data['imageUrl'], // Pass the imageUrl to PostCard
-                );
-              },
-            );
-          }).toList(),
+                  return PostCard(
+                    title: data['title'] ?? '',
+                    content: data['content'] ?? '',
+                    commentCount: data['commentCount'] ?? 0,
+                    timestamp: data['timestamp']?.toDate() ?? DateTime.now(),
+                    postId: document.id,
+                    userId: data['userId'] ?? '',
+                    profileEmoji: profileEmoji,
+                    userName: userName,
+                    imageUrl: data['imageUrl'],
+                  );
+                },
+              );
+            }).toList(),
+          ),
         );
       },
     );

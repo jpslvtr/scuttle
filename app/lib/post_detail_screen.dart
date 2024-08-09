@@ -141,7 +141,6 @@ class CommentList extends StatelessWidget {
       stream: FirebaseFirestore.instance
           .collection('comments')
           .where('postId', isEqualTo: postId)
-          .orderBy('timestamp', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
@@ -154,6 +153,15 @@ class CommentList extends StatelessWidget {
         }
 
         final commentDocs = snapshot.data!.docs;
+
+        // Sort comments by points (votes) in descending order
+        commentDocs.sort((a, b) {
+          final aPoints =
+              (a.data() as Map<String, dynamic>)['points'] as int? ?? 0;
+          final bPoints =
+              (b.data() as Map<String, dynamic>)['points'] as int? ?? 0;
+          return bPoints.compareTo(aPoints);
+        });
 
         return ListView.builder(
           shrinkWrap: true,
