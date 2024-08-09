@@ -17,6 +17,7 @@ class AppState extends ChangeNotifier {
   bool isOutOfZone = false;
   bool isNewUser = true;
   bool isLocationPermissionChecked = false;
+  bool isIdMeVerified = false;
 
   static const Map<String, Map<String, dynamic>> zones = {
     'TEST: Bay Area': {
@@ -73,6 +74,7 @@ class AppState extends ChangeNotifier {
         userCommentVotes =
             Map<String, int>.from(userData['commentVotes'] ?? {});
         userPoints = userData['points'] as int? ?? 0;
+        isIdMeVerified = userData['isIdMeVerified'] as bool? ?? false;
         isNewUser = false;
       } else {
         await createUserDocument(uid);
@@ -102,12 +104,28 @@ class AppState extends ChangeNotifier {
         'commentVotes': {},
         'points': 0,
         'command': null,
+        'isIdMeVerified': false,
       }, SetOptions(merge: true));
       isNewUser = true;
       notifyListeners();
     } catch (e) {
       print('Error creating user document: $e');
       throw e;
+    }
+  }
+
+  Future<void> setIdMeVerified(bool verified) async {
+    if (userId == null) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .update({'isIdMeVerified': verified});
+      isIdMeVerified = verified;
+      notifyListeners();
+    } catch (e) {
+      print('Error updating ID.me verification status: $e');
     }
   }
 

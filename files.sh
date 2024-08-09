@@ -26,9 +26,6 @@ append_file_content "app/ios/Runner/Info.plist"
 append_file_content "app/ios/Runner/GoogleService-Info.plist"
 append_file_content "app/ios/Flutter/AppFrameworkInfo.plist"
 append_file_content "app/pubspec.yaml"
-
-# Append the Firestore Database Rules file with a custom title
 append_file_content "wm-db.txt"
-
-# Append the Google Maps API key
-echo "Google Maps API Key: AIzaSyDKTZVwlg1SO-JlyAH3LZd0F4qYsbjdh3g" >> files.txt
+append_file_content "firebase.json"
+append_file_content "functions/index.js"

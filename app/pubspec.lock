@@ -65,6 +65,30 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.12.5"
+  cloud_functions:
+    dependency: "direct main"
+    description:
+      name: cloud_functions
+      sha256: ddec68a2fbee603527c009bb20c6bd071559dfa87fda55d9d92052d1ebff5377
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.7.6"
+  cloud_functions_platform_interface:
+    dependency: transitive
+    description:
+      name: cloud_functions_platform_interface
+      sha256: "0c6fca0e64fc2d3a3834d39f99b0ee6f76d96f94bb5acf4593af891df914d175"
+      url: "https://pub.dev"
+    source: hosted
+    version: "5.5.28"
+  cloud_functions_web:
+    dependency: transitive
+    description:
+      name: cloud_functions_web
+      sha256: af536e7c7223c64250c6cc384dc553d76bbacc9b9127389df0c654887f203911
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.9.6"
   collection:
     dependency: transitive
     description:
@@ -74,7 +98,7 @@ packages:
     source: hosted
     version: "1.18.0"
   crypto:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: crypto
       sha256: ff625774173754681d66daaf4a448684fb04b78f902da9cb3d308c19cc5e8bab
@@ -179,11 +203,27 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  flutter_web_auth:
+    dependency: "direct main"
+    description:
+      name: flutter_web_auth
+      sha256: a69fa8f43b9e4d86ac72176bf747b735e7b977dd7cf215076d95b87cb05affdd
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.5.0"
   flutter_web_plugins:
     dependency: transitive
     description: flutter
     source: sdk
     version: "0.0.0"
+  flutter_webview_plugin:
+    dependency: "direct main"
+    description:
+      name: flutter_webview_plugin
+      sha256: ec410b10822b06432e11f9680b319609d6f34bcdabb31fcc4990ac8a2aaf9ff0
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.4.0"
   geolocator:
     dependency: "direct main"
     description:
@@ -281,13 +321,13 @@ packages:
     source: hosted
     version: "0.12.4+1"
   http:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: http
-      sha256: "761a297c042deedc1ffbb156d6e2af13886bb305c2a343a4d972504cd67dd938"
+      sha256: "5895291c13fa8a3bd82e76d5627f69e0d85ca6a30dcac95c4ea19a5d555879c2"
       url: "https://pub.dev"
     source: hosted
-    version: "1.2.1"
+    version: "0.13.6"
   http_parser:
     dependency: transitive
     description:

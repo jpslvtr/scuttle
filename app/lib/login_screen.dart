@@ -1,12 +1,16 @@
-// File: app/lib/login_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_webview_plugin/flutter_webview_plugin.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'dart:async';
+import 'dart:math';
+import 'package:crypto/crypto.dart';
 import 'app_state.dart';
 import 'zone_selection_screen.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter_web_auth/flutter_web_auth.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -18,55 +22,149 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
 
-  Future<UserCredential?> signInWithGoogle() async {
-    try {
-      // Trigger the authentication flow
-      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+  Future<UserCredential?> signInWithIdMe() async {
+    print("Starting ID.me sign-in process");
+    const String clientId = '0d399b555eb4574e6b761b7d2c103662';
+    const String redirectUri = 'com.park.scuttle://callback';
+    const String authorizationEndpoint = 'https://api.id.me/oauth/authorize';
 
-      if (googleUser == null) {
-        throw Exception('Google Sign In was canceled');
+    final String codeVerifier = _generateRandomString(128);
+    final List<int> bytes = utf8.encode(codeVerifier);
+    final Digest digest = sha256.convert(bytes);
+    final String codeChallenge =
+        base64Url.encode(digest.bytes).replaceAll('=', '');
+
+    final String authorizationUrl = '$authorizationEndpoint'
+        '?client_id=$clientId'
+        '&redirect_uri=${Uri.encodeComponent(redirectUri)}'
+        '&response_type=code'
+        '&scope=military'
+        '&code_challenge=$codeChallenge'
+        '&code_challenge_method=S256'
+        '&show_verify=true';
+
+    try {
+      print("Initiating ID.me authentication");
+      print("Authorization URL: $authorizationUrl");
+
+      final result = await FlutterWebAuth.authenticate(
+          url: authorizationUrl, callbackUrlScheme: "com.park.scuttle");
+
+      print("Received result from FlutterWebAuth: $result");
+
+      final uri = Uri.parse(result);
+      final code = uri.queryParameters['code'];
+      final error = uri.queryParameters['error'];
+      final errorDescription = uri.queryParameters['error_description'];
+
+      if (error != null) {
+        print("Error returned from ID.me: $error");
+        print("Error description: $errorDescription");
+        throw Exception('Error during ID.me authorization: $error');
       }
 
-      // Obtain the auth details from the request
-      final GoogleSignInAuthentication googleAuth =
-          await googleUser.authentication;
+      if (code == null) {
+        print("No code found in the redirect URI");
+        print("Redirect URI parameters: ${uri.queryParameters}");
+        throw Exception('No code returned from ID.me');
+      }
 
-      // Create a new credential
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
+      print("Authorization code received: $code");
+
+      print("Exchanging authorization code for access token");
+      final tokenResponse = await http.post(
+        Uri.parse('https://api.id.me/oauth/token'),
+        body: {
+          'code': code,
+          'client_id': clientId,
+          'client_secret': 'ca870bd28dbb2d711cc7cef8dc267127',
+          'redirect_uri': redirectUri,
+          'grant_type': 'authorization_code',
+          'code_verifier': codeVerifier,
+        },
       );
 
-      // Sign in to Firebase with the Google credential
-      final UserCredential userCredential =
-          await FirebaseAuth.instance.signInWithCredential(credential);
+      print("Token response status code: ${tokenResponse.statusCode}");
+      print("Token response body: ${tokenResponse.body}");
 
-      return userCredential;
+      if (tokenResponse.statusCode == 200) {
+        print("Access token obtained successfully");
+        final tokenData = json.decode(tokenResponse.body);
+        final accessToken = tokenData['access_token'];
+
+        print("Calling Firebase Function");
+        final callable =
+            FirebaseFunctions.instance.httpsCallable('createFirebaseToken');
+        final result = await callable.call({'idmeToken': accessToken});
+
+        print("Firebase Function result: ${result.data}");
+
+        final customToken = result.data['customToken'];
+
+        print("Firebase custom token obtained");
+        final userCredential =
+            await FirebaseAuth.instance.signInWithCustomToken(customToken);
+
+        print("Signed in to Firebase successfully");
+        await Provider.of<AppState>(context, listen: false)
+            .setIdMeVerified(true);
+
+        return userCredential;
+      } else {
+        print(
+            "Failed to obtain access token. Status code: ${tokenResponse.statusCode}");
+        print("Response body: ${tokenResponse.body}");
+        throw Exception('Failed to obtain access token');
+      }
     } catch (e) {
-      print('Error in signInWithGoogle: $e');
+      print("Error during ID.me sign-in: $e");
+      if (e is FirebaseFunctionsException) {
+        print("Firebase Functions Exception: ${e.code} - ${e.message}");
+        print("Firebase Functions Exception details: ${e.details}");
+        if (e.code == 'permission-denied') {
+          if (e.message!.contains('not verified by ID.me')) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                  content: Text(
+                      'Your ID.me account is not verified. Please verify your account with ID.me and try again.')),
+            );
+          } else if (e.message!.contains('does not have military status')) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                  content: Text(
+                      'You must have a verified military status with ID.me to use this app.')),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                  content: Text(
+                      'You do not have permission to use this app. Please ensure you have a verified military status with ID.me.')),
+            );
+          }
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content:
+                    Text('An error occurred during sign-in: ${e.message}')),
+          );
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(
+                  'An unexpected error occurred during sign-in. Please try again.')),
+        );
+      }
       return null;
     }
   }
 
-  Future<UserCredential?> signInWithApple() async {
-    try {
-      final appleCredential = await SignInWithApple.getAppleIDCredential(
-        scopes: [
-          AppleIDAuthorizationScopes.email,
-          AppleIDAuthorizationScopes.fullName,
-        ],
-      );
-
-      final oauthCredential = OAuthProvider("apple.com").credential(
-        idToken: appleCredential.identityToken,
-        accessToken: appleCredential.authorizationCode,
-      );
-
-      return await FirebaseAuth.instance.signInWithCredential(oauthCredential);
-    } catch (e) {
-      print('Error in signInWithApple: $e');
-      return null;
-    }
+  String _generateRandomString(int length) {
+    const chars =
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+    final random = Random.secure();
+    return List.generate(length, (index) => chars[random.nextInt(chars.length)])
+        .join();
   }
 
   void _handleSignIn(Future<UserCredential?> Function() signInMethod) async {
@@ -82,18 +180,14 @@ class _LoginScreenState extends State<LoginScreen> {
         final user = userCredential.user!;
         final appState = Provider.of<AppState>(context, listen: false);
 
-        // Check if the user document already exists
         bool userExists = await appState.checkUserExists(user.uid);
 
         if (!userExists) {
-          // Create user document in Firestore
           await appState.createUserDocument(user.uid);
         }
 
-        // Initialize user data
         await appState.initializeUser(user.uid);
 
-        // Navigate to ZoneSelectionScreen
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
             builder: (context) => ZoneSelectionScreen(isInitialSetup: true),
@@ -127,40 +221,37 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(
-                'Scuttle',
-                style: TextStyle(
-                  fontSize: 48,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.blue[800],
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Image.asset(
+                    'assets/AppIcon-1024-Transparent.png',
+                    height: 64,
+                    width: 64,
+                  ),
+                  Text(
+                    'Scuttle',
+                    style: TextStyle(
+                      fontSize: 48,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue[800],
+                    ),
+                  ),
+                ],
               ),
               SizedBox(height: 50),
               _buildSignInButton(
                 onPressed:
-                    _isLoading ? null : () => _handleSignIn(signInWithGoogle),
+                    _isLoading ? null : () => _handleSignIn(signInWithIdMe),
                 icon: Image.asset(
-                  'assets/google_logo.png',
+                  'assets/idme_logo.png',
                   height: 24.0,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Icon(Icons.verified_user,
+                        size: 24, color: Colors.blue);
+                  },
                 ),
-                text: 'Sign in with Google',
-              ),
-              SizedBox(height: 20),
-              FutureBuilder<bool>(
-                future: SignInWithApple.isAvailable(),
-                builder: (context, snapshot) {
-                  if (snapshot.data == true) {
-                    return _buildSignInButton(
-                      onPressed: _isLoading
-                          ? null
-                          : () => _handleSignIn(signInWithApple),
-                      icon: Icon(Icons.apple, size: 24, color: Colors.black),
-                      text: 'Sign in with Apple',
-                    );
-                  } else {
-                    return SizedBox.shrink();
-                  }
-                },
+                text: 'Sign in with ID.me',
               ),
             ],
           ),
@@ -193,7 +284,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 children: [
                   icon,
                   SizedBox(width: 10),
-                  Text(text),
+                  Flexible(
+                    child: Text(
+                      text,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ],
               ),
       ),

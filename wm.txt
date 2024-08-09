@@ -12,3 +12,9 @@ dart fix --apply
 open app/ios/Runner.xcworkspace
 
 git push --force origin main
+
+
+
+
+Features
+- Pull down and refresh

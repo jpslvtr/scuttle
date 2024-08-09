@@ -1,0 +1,72 @@
+ID.me info
+
+Redirect URIs:
+com.park.scuttle://callback
+https://jpslvtr.github.io/scuttle-idme/
+Client ID 0d399b555eb4574e6b761b7d2c103662
+Client Secret ca870bd28dbb2d711cc7cef8dc267127
+URI 1
+Step 1. Direct users to the authorization endpoint
+https://groups.id.me/?client_id=0d399b555eb4574e6b761b7d2c103662&redirect_uri=https://jpslvtr.github.io/scuttle-idme/&response_type=code&scopes=government,military
+Step 2. Receive the authorization code
+https://jpslvtr.github.io/scuttle-idme/?code=a1b2c3d4e5f6g7h8i9j0
+Step 3. Exchange the authorization code for an Access Token
+curl -X POST -d "code=a1b2c3d4e5f6g7h8i9j0&client_id=0d399b555eb4574e6b761b7d2c103662&client_secret=ca870bd28dbb2d711cc7cef8dc267127&redirect_uri=https://jpslvtr.github.io/scuttle-idme/&grant_type=authorization_code" https://api.id.me/oauth/token
+URI 2 (which is what I think we're supposed to use)
+Step 1. Direct users to the authorization endpoint
+https://groups.id.me/?client_id=0d399b555eb4574e6b761b7d2c103662&redirect_uri=com.park.scuttle://callback&response_type=code&scopes=government,military
+Step 2. Receive the authorization code
+com.park.scuttle://callback?code=a1b2c3d4e5f6g7h8i9j0
+Step 3. Exchange the authorization code for an Access Token
+curl -X POST -d "code=a1b2c3d4e5f6g7h8i9j0&client_id=0d399b555eb4574e6b761b7d2c103662&client_secret=ca870bd28dbb2d711cc7cef8dc267127&redirect_uri=com.park.scuttle://callback&grant_type=authorization_code" https://api.id.me/oauth/token
+Step 4. Obtain the Access Token
+{
+      "access_token" : "a0b1c2d3f4g5h6i7j8k9l0m1n2o3p4q5",
+      "token_type" : "bearer",
+      "expires_in" : "300",
+      "refresh_token" : "e7c77fe1fd5ece9aaccb129f6dd39431",
+      "refresh_expires_in" : "604800"
+}
+The following code snippet can be used to add the ID.me button widget to your app. This widget only supports a full page redirect to the authorization endpoint.
+<span
+  id="idme-wallet-button"
+  data-scope="government,military"
+  data-client-id="0d399b555eb4574e6b761b7d2c103662"
+  data-redirect="com.park.scuttle://callback"
+  data-response="code"
+  data-text="[AFFINITY GROUP] receives [OFFER] with ID.me"
+  data-show-verify="true">
+</span>
+<script src="https://s3.amazonaws.com/idme/developer/idme-buttons/assets/js/idme-wallet-button.js"></script>
+
+These parameters establish both necessary and adaptable configurations, empowering customers to align with ID.me brand guidelines, utilize the appropriate button for specific scenarios, and guide users seamlessly through subsequent steps.
+
+Parameter | Values | Description | Required
+--- | --- | --- | ---
+data-scope | government,military | Defines the community you are requesting permission to access. | Required
+data-client-id | 0d399b555eb4574e6b761b7d2c103662 | The client identifier received during app registration. It is automatically generated and can be found in your application dashboard. | Required
+data-redirect | Select redirect URI: | The url the user gets redirected to after authorizing an app. Set by the developer within the application dashboard. | Required
+data-response | code or token | The OAuth 2.0 grant type - Authorization Code ( code ) or Implicit ( token ). | Required
+data-text | Example: Military members receive 10% off with ID.me | A recommended parameter that displays a custom offer description within the ID.me Button Widget. | Required if data-type="link"
+data-logo | [YOUR_LOGO_URL] | A recommended parameter that displays a logo at the community selection page. | Optional
+data-hero | [YOUR_HERO_IMAGE_URL] | A recommended parameter that displays a hero image at the community selection page. | Optional
+data-state | Example: 24730b6d | A parameter to carry through any server-specific state you need to protect against CSRF issues. | Optional
+data-display | popup or fullpage | A recommended parameter that determines to user experience. Defaults to fullpage . | Optional
+data-show-verify | true or false | Displays the "Verification by ID.me" text. Defaults to false . | Optional
+data-app-id | Example: SC5297244398558619035353581 | An Application Identifier, used to denote a unique application on the partner side | Optional
+
+Example Pop-up Redirect Page
+The user will authenticate, verify and then authorize your app inside of the popup before being taken to the redirect URI. Our suggestion as this point is to handle the OAuth token response, close the popup and then refresh the parent window. Here is an example of a dummy page you could place at the redirect URI to achieve this.
+
+<!-- This code snippet is not production quality -->
+<html>
+  <head>
+   <script type="text/javascript">
+     // Your application logic to handle the OAuth response
+
+     window.opener.location.reload();
+     window.close();
+   </script>
+  </head>
+  <body></body>
+</html>

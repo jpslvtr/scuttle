@@ -1,9 +1,11 @@
-My app Scuttle is an anonymous feed-based platform for service members to engage with other members of their command, branch of service, and the entire military. The company version of this idea is roughly "Blind." The school version of this idea is roughly "Fizz." The community version of this idea used to be "Yik Yak." Please read the attached file thoroughly. It contains the code for the app and the Firestore database rules.
+My app Scuttle is an anonymous feed-based platform for service members to engage with other members of their command, branch of service, and the entire military. 
 
-Please read the attached file thoroughly.
+Please read the attached files thoroughly.
 - For any code that needs editing, give me the FULL method or class. Even the unchanged parts.
 - Ensure that code changes don’t break any existing functionality. 
 - Occam's razor. Simple code is preferred.
 - Make no assumptions. If you aren't certain about something, ask.
 
-API
+I've set up auth with google, apple, and id.me. can you remove the google and apple buttons in the login page? I just want id.me
+
+And is there any way to put app/assets/AppIcon-1024.png in the login page as well? To the left of the name, Scuttle?
