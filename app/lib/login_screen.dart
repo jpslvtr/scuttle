@@ -3,9 +3,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:provider/provider.dart';
 import 'app_state.dart';
-import 'scuttlebutt_app.dart';
 import 'zone_selection_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -48,7 +48,28 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void _handleSignIn() async {
+  Future<UserCredential?> signInWithApple() async {
+    try {
+      final appleCredential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+
+      final oauthCredential = OAuthProvider("apple.com").credential(
+        idToken: appleCredential.identityToken,
+        accessToken: appleCredential.authorizationCode,
+      );
+
+      return await FirebaseAuth.instance.signInWithCredential(oauthCredential);
+    } catch (e) {
+      print('Error in signInWithApple: $e');
+      return null;
+    }
+  }
+
+  void _handleSignIn(Future<UserCredential?> Function() signInMethod) async {
     if (_isLoading) return;
 
     setState(() {
@@ -56,7 +77,7 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final UserCredential? userCredential = await signInWithGoogle();
+      final UserCredential? userCredential = await signInMethod();
       if (userCredential != null && userCredential.user != null && mounted) {
         final user = userCredential.user!;
         final appState = Provider.of<AppState>(context, listen: false);
@@ -79,13 +100,13 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         );
       } else {
-        throw Exception('Failed to sign in with Google');
+        throw Exception('Failed to sign in');
       }
     } catch (e) {
       print('Error during sign in: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to sign in with Google: $e')),
+          SnackBar(content: Text('Failed to sign in: $e')),
         );
       }
     } finally {
@@ -94,15 +115,6 @@ class _LoginScreenState extends State<LoginScreen> {
           _isLoading = false;
         });
       }
-    }
-  }
-
-  void _navigateToZoneSelection() {
-    if (mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-            builder: (context) => ZoneSelectionScreen(isInitialSetup: true)),
-      );
     }
   }
 
@@ -124,30 +136,66 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
               SizedBox(height: 50),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  foregroundColor: Colors.black,
-                  backgroundColor: Colors.white,
-                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+              _buildSignInButton(
+                onPressed:
+                    _isLoading ? null : () => _handleSignIn(signInWithGoogle),
+                icon: Image.asset(
+                  'assets/google_logo.png',
+                  height: 24.0,
                 ),
-                child: _isLoading
-                    ? CircularProgressIndicator()
-                    : Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Image.asset(
-                            'assets/google_logo.png',
-                            height: 24.0,
-                          ),
-                          SizedBox(width: 10),
-                          Text('Sign in with Google'),
-                        ],
-                      ),
-                onPressed: _isLoading ? null : _handleSignIn,
+                text: 'Sign in with Google',
+              ),
+              SizedBox(height: 20),
+              FutureBuilder<bool>(
+                future: SignInWithApple.isAvailable(),
+                builder: (context, snapshot) {
+                  if (snapshot.data == true) {
+                    return _buildSignInButton(
+                      onPressed: _isLoading
+                          ? null
+                          : () => _handleSignIn(signInWithApple),
+                      icon: Icon(Icons.apple, size: 24, color: Colors.black),
+                      text: 'Sign in with Apple',
+                    );
+                  } else {
+                    return SizedBox.shrink();
+                  }
+                },
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildSignInButton({
+    required VoidCallback? onPressed,
+    required Widget icon,
+    required String text,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          foregroundColor: Colors.black,
+          backgroundColor: Colors.white,
+          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+        onPressed: onPressed,
+        child: _isLoading
+            ? CircularProgressIndicator()
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  icon,
+                  SizedBox(width: 10),
+                  Text(text),
+                ],
+              ),
       ),
     );
   }

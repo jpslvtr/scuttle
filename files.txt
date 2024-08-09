@@ -510,40 +510,51 @@ class AppState extends ChangeNotifier {
 
         int currentVote = userCommentVotes[commentId] ?? 0;
         int newVote;
+        int pointsDelta;
 
         if (currentVote == delta) {
+          // If the user is voting the same way, remove their vote
           newVote = 0;
-          delta = -currentVote;
-        } else {
+          pointsDelta = -currentVote;
+        } else if (currentVote == 0) {
+          // If the user hasn't voted before, add their vote
           newVote = delta;
-          delta = newVote - currentVote;
+          pointsDelta = delta;
+        } else {
+          // If the user is changing their vote, update accordingly
+          newVote = delta;
+          pointsDelta = delta *
+              2; // Multiply by 2 to reverse previous vote and add new vote
         }
 
         int oldPoints = freshComment.get('points') as int;
-        int newPoints = oldPoints + delta;
+        int newPoints = oldPoints + pointsDelta;
 
-        transaction.update(commentRef, {'points': newPoints});
-
+        // Perform all reads before writes
         DocumentReference userRef =
             FirebaseFirestore.instance.collection('users').doc(userId);
+        DocumentSnapshot userDoc = await transaction.get(userRef);
+
+        String commentCreatorId = freshComment.get('userId') as String;
+        DocumentReference commentCreatorRef = FirebaseFirestore.instance
+            .collection('users')
+            .doc(commentCreatorId);
+        DocumentSnapshot commentCreatorDoc =
+            await transaction.get(commentCreatorRef);
+
+        // Now perform all writes
+        transaction.update(commentRef, {'points': newPoints});
         transaction.update(userRef, {'commentVotes.$commentId': newVote});
 
-        userCommentVotes[commentId] = newVote;
-
-        // Award points to the comment creator if it's an upvote
-        if (delta > 0) {
-          String commentCreatorId = freshComment.get('userId') as String;
-          if (commentCreatorId != userId) {
-            DocumentReference commentCreatorRef = FirebaseFirestore.instance
-                .collection('users')
-                .doc(commentCreatorId);
-            DocumentSnapshot commentCreatorDoc =
-                await transaction.get(commentCreatorRef);
-            int creatorPoints = commentCreatorDoc.get('points') as int? ?? 0;
-            transaction
-                .update(commentCreatorRef, {'points': creatorPoints + 1});
-          }
+        // Update comment creator's points if the user exists and it's not the current user
+        if (commentCreatorDoc.exists && commentCreatorId != userId) {
+          int creatorPoints = commentCreatorDoc.get('points') as int? ?? 0;
+          transaction.update(
+              commentCreatorRef, {'points': creatorPoints + pointsDelta});
         }
+
+        // Update local state
+        userCommentVotes[commentId] = newVote;
       });
     } catch (e) {
       print('Error updating comment points: $e');
@@ -1232,9 +1243,9 @@ File: app/lib/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:provider/provider.dart';
 import 'app_state.dart';
-import 'scuttlebutt_app.dart';
 import 'zone_selection_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -1277,7 +1288,28 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void _handleSignIn() async {
+  Future<UserCredential?> signInWithApple() async {
+    try {
+      final appleCredential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+
+      final oauthCredential = OAuthProvider("apple.com").credential(
+        idToken: appleCredential.identityToken,
+        accessToken: appleCredential.authorizationCode,
+      );
+
+      return await FirebaseAuth.instance.signInWithCredential(oauthCredential);
+    } catch (e) {
+      print('Error in signInWithApple: $e');
+      return null;
+    }
+  }
+
+  void _handleSignIn(Future<UserCredential?> Function() signInMethod) async {
     if (_isLoading) return;
 
     setState(() {
@@ -1285,7 +1317,7 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final UserCredential? userCredential = await signInWithGoogle();
+      final UserCredential? userCredential = await signInMethod();
       if (userCredential != null && userCredential.user != null && mounted) {
         final user = userCredential.user!;
         final appState = Provider.of<AppState>(context, listen: false);
@@ -1308,13 +1340,13 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         );
       } else {
-        throw Exception('Failed to sign in with Google');
+        throw Exception('Failed to sign in');
       }
     } catch (e) {
       print('Error during sign in: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to sign in with Google: $e')),
+          SnackBar(content: Text('Failed to sign in: $e')),
         );
       }
     } finally {
@@ -1323,15 +1355,6 @@ class _LoginScreenState extends State<LoginScreen> {
           _isLoading = false;
         });
       }
-    }
-  }
-
-  void _navigateToZoneSelection() {
-    if (mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-            builder: (context) => ZoneSelectionScreen(isInitialSetup: true)),
-      );
     }
   }
 
@@ -1372,7 +1395,24 @@ class _LoginScreenState extends State<LoginScreen> {
                           Text('Sign in with Google'),
                         ],
                       ),
-                onPressed: _isLoading ? null : _handleSignIn,
+                onPressed:
+                    _isLoading ? null : () => _handleSignIn(signInWithGoogle),
+              ),
+              SizedBox(height: 20),
+              FutureBuilder<bool>(
+                future: SignInWithApple.isAvailable(),
+                builder: (context, snapshot) {
+                  if (snapshot.data == true) {
+                    return SignInWithAppleButton(
+                      onPressed: _isLoading
+                          ? () {} // Do nothing if loading
+                          : () => _handleSignIn(signInWithApple),
+                    );
+                  } else {
+                    return SizedBox
+                        .shrink(); // Hide the button if not available
+                  }
+                },
               ),
             ],
           ),
@@ -3602,6 +3642,7 @@ dependencies:
   google_sign_in: ^6.1.0
   geolocator: ^9.0.2 
   shared_preferences: ^2.1.1
+  sign_in_with_apple: ^4.3.0
   
 dev_dependencies:
   flutter_test:

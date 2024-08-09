@@ -42,7 +42,7 @@ class AboutScreen extends StatelessWidget {
             ),
             SizedBox(height: 16),
             _buildParagraph(
-              'The main difference between our "All Navy" feed and the Navy subreddit is that everyone on Scuttle is a verified military member.',
+              'The main difference between the "All Navy" feed and the Navy subreddit is that everyone on Scuttle is a verified service member.',
             ),
             SizedBox(height: 16),
             _buildParagraph(
