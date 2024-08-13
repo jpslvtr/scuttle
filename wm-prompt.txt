@@ -6,7 +6,13 @@ Please read the attached files thoroughly.
 - Occam's razor. Simple code is preferred.
 - Make no assumptions. If you aren't certain about something, ask.
 
-I want to be able to test and see feeds from other zones once this app is on the app store. How do I fake my location in the iphone simulator?
+In the login screen, can you edit the "App Store Review Access" to enable reviewers to log in with just email/password? I enabled email/password login in firebase and added this as a user
+
+Email: scouttestreview@gmail.com
+Password: scout^^^test^^^review
+
+Please ensure that a corresponding user document is made for them where their userName is @appstorereview and their emoji is 🧑‍💻
+
 
 Norfolk: 36.8508, -76.2859
 San Diego: 32.7157, -117.1611
@@ -18,3 +24,20 @@ Hawaii (Honolulu): 21.3069, -157.8583
 National Capital Region (Washington D.C.): 38.9072, -77.0369
 
 
+==
+
+
+Hello, I couldn't find the "Reply" button in my thread with App Review, so I've pasted my message below. It's in response to a few issues with my app submission. I've since resubmitted and am awaiting review. Thanks!
+
+Guideline 2.1 - Information Needed
+I've enabled email/password sign-in, so we no longer go through Google. The credentials below should work now:
+Username: scouttestreview@gmail.com
+Password: scout^^^test^^^review
+
+And I apologize for the delay; I had drafted responses for 2.33 and 4.8 but hadn't submitted them. It seems like 2.33 is good, but I'll paste what I had typed for both.
+
+Guideline 2.3.3 - Performance - Accurate Metadata
+I've added a few more screenshots to demonstrate the app's functionality. The app is relatively simple, as it is primarily an anonymous feed.
+
+Guideline 4.8 - Design - Login Services
+Since Scuttle is exclusively for service members, it uses ID.me for authentication. I believe this qualifies under Guideline 4.8 as a "government or industry-backed citizen identification system or electronic ID to authenticate users," which should exempt us from the requirement to provide Sign in with Apple. App Store reviewers have a temporary "App Store Review Access" button in build 1.0.2, using login credentials. This button will not be present in the production build (1.0.1), which will only offer ID.me login.

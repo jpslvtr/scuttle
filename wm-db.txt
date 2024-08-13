@@ -2,46 +2,43 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isAppStoreReviewer() {
+      return request.auth != null && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAppStoreReviewer == true;
+    }
+
+    function isAppStoreReviewerOrAuth() {
+      return request.auth != null || isAppStoreReviewer();
+    }
+
     match /users/{userId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null && request.auth.uid == userId;
-      allow update: if request.auth != null && 
-                    (request.auth.uid == userId || 
-                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points', 'votes']));
+      allow read: if true;
+      allow create: if 
+        (request.resource.data.isAppStoreReviewer == true && 
+         request.resource.data.userName == '@appstorereview') || 
+        (request.auth != null && request.auth.uid == userId);
+      allow update: if isAppStoreReviewerOrAuth() &&
+                       (request.auth.uid == userId || 
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points', 'votes', 'commentVotes', 'savedPosts', 'command', 'profileEmoji']));
       allow delete: if request.auth != null && request.auth.uid == userId;
     }
     
     match /posts/{postId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null;
-      allow update: if request.auth != null && 
-                    (resource.data.userId == request.auth.uid || 
-                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points']));
-      allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow read: if true;
+      allow create: if isAppStoreReviewerOrAuth();
+      allow update: if isAppStoreReviewerOrAuth() &&
+                       (resource.data.userId == request.auth.uid || 
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points', 'commentCount']));
+      allow delete: if isAppStoreReviewerOrAuth() && request.auth.uid == resource.data.userId;
     }
     
     match /comments/{commentId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null;
-      allow update: if request.auth != null && 
-                    (resource.data.userId == request.auth.uid || 
-                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points']));
-      allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
-    }
-  }
-}
-
-Firestore storage rules
-
-rules_version = '2';
-
-// Craft rules based on data in your Firestore database
-// allow write: if firestore.get(
-//    /databases/(default)/documents/users/$(request.auth.uid)).data.isAdmin;
-service firebase.storage {
-  match /b/{bucket}/o {
-    match /{allPaths=**} {
-      allow read, write: if false;
+      allow read: if true;
+      allow create: if isAppStoreReviewerOrAuth();
+      allow update: if isAppStoreReviewerOrAuth() &&
+                       (resource.data.userId == request.auth.uid || 
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points']));
+      allow delete: if isAppStoreReviewerOrAuth() && request.auth.uid == resource.data.userId;
     }
   }
 }

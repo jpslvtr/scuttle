@@ -96,6 +96,12 @@ class AppState extends ChangeNotifier {
         userPoints = userData['points'] as int? ?? 0;
         isIdMeVerified = userData['isIdMeVerified'] as bool? ?? false;
         isNewUser = false;
+
+        // Check if the user is an App Store reviewer
+        if (userData['isAppStoreReviewer'] == true) {
+          command = 'All Navy';
+          currentFeed = 'All Navy';
+        }
       } else {
         await createUserDocument(uid);
       }
@@ -114,19 +120,27 @@ class AppState extends ChangeNotifier {
         throw Exception('No authenticated user found');
       }
 
+      bool isAppStoreReviewer = user.email == 'scouttestreview@gmail.com';
+
       await FirebaseFirestore.instance.collection('users').doc(uid).set({
         'email': user.email,
         'createdAt': FieldValue.serverTimestamp(),
-        'profileEmoji': '🙂',
+        'profileEmoji': isAppStoreReviewer ? '🧑‍💻' : '🙂',
         'savedPosts': [],
-        'userName': '',
+        'userName': isAppStoreReviewer ? '@appstorereview' : '',
         'votes': {},
         'commentVotes': {},
         'points': 0,
-        'command': null,
+        'command': isAppStoreReviewer ? 'All Navy' : null,
         'isIdMeVerified': false,
+        'isAppStoreReviewer': isAppStoreReviewer,
       }, SetOptions(merge: true));
+
       isNewUser = true;
+      if (isAppStoreReviewer) {
+        command = 'All Navy';
+        currentFeed = 'All Navy';
+      }
       notifyListeners();
     } catch (e) {
       print('Error creating user document: $e');

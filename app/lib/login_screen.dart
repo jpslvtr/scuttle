@@ -11,6 +11,7 @@ import 'app_state.dart';
 import 'zone_selection_screen.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter_web_auth/flutter_web_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -21,6 +22,8 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
 
   Future<UserCredential?> signInWithIdMe() async {
     print("Starting ID.me sign-in process");
@@ -159,6 +162,20 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<UserCredential?> signInWithEmailPassword() async {
+    try {
+      final UserCredential userCredential =
+          await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+      return userCredential;
+    } catch (e) {
+      print('Error during email/password sign in: $e');
+      return null;
+    }
+  }
+
   String _generateRandomString(int length) {
     const chars =
         'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
@@ -253,10 +270,57 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 text: 'Sign in with ID.me',
               ),
+              SizedBox(height: 16),
+              _buildSignInButton(
+                onPressed: _isLoading ? null : () => _showEmailPasswordDialog(),
+                icon: Icon(Icons.login, size: 24, color: Colors.green),
+                text: 'App Store Review Access',
+              ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  void _showEmailPasswordDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('App Store Reviewer Login'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _emailController,
+                decoration: InputDecoration(labelText: 'Email'),
+                keyboardType: TextInputType.emailAddress,
+              ),
+              TextField(
+                controller: _passwordController,
+                decoration: InputDecoration(labelText: 'Password'),
+                obscureText: true,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              child: Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: Text('Login'),
+              onPressed: () {
+                Navigator.of(context).pop();
+                _handleSignIn(signInWithEmailPassword);
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 
