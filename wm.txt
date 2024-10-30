@@ -2,8 +2,11 @@ Functionality > flow > look
 
 git reset --hard [hash]
 
-open -a Simulator --args -CurrentDeviceUDID ED81B392-9986-4019-B71D-35FA08E3B179
+iPhone
+open -a Simulator --args -CurrentDeviceUDID ED81B392-9986-4019-B71D-35FA08E3B179s
 
+iPad 
+open -a Simulator --args -CurrentDeviceUDID 80043307-BDBA-4864-9D1E-BB6BC6FFCE71
 flutter run
 
 dart fix --dry-run
@@ -12,4 +15,28 @@ dart fix --apply
 open app/ios/Runner.xcworkspace
 
 git push --force origin main
+
+open ios/Runner.xcworkspace
+
+python3 -m venv myenv
+source myenv/bin/activate
+deactivate
+
+firebase functions:list
+firebase deploy --only functions
+
+Bug fixes and improvements. 
+
+kill -9 pid
+
+############################################################################################################################################
+
+Below is Scout's info
+
+App apple ID: 6505122724
+App bundle ID: com.park.scout
+Team ID: M68HYBDL92
+Developer ID: 4fa5b609-7bdb-44be-9c38-76709ca81676
+
+############################################################################################################################################
 

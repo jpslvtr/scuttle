@@ -1,10 +1,25 @@
 My app Scuttle is an anonymous feed-based platform for service members to engage with other members of their command, branch of service, and the entire military. 
 
-Please read the attached files thoroughly.
-- For any code that needs editing, give me the FULL method or class. Even the unchanged parts.
-- Ensure that code changes don’t break any existing functionality. 
-- Occam's razor. Simple code is preferred.
+==================
+
+Ask:
+
+I use cloud firebase functions for authentication with id.me. But can you look for other places in my code that I could use cloud firebase functions that would improve the ux? Most actions in the app trigger a refresh and it would be nice if there was no refresh. Some examples:
+- upvoting/downvoting a comment, deleting a comment you left in a post's post details page
+- saving a post in the feed
+- deleting a comment you left from your profile
+For some reason upvoting/downvoting posts in the feed don't trigger a refresh. Upvoting/downvoting your own post in your profile also don't trigger a refresh. That's interesting.
+
+==================
+
+Guidance: 
+- Whenever you provide code, ensure that you deliver the solution in its entirety, not fragmented into parts.
+- The code should be ready to be copied and pasted directly into the target file, completely replacing the existing content without the need for additional adjustments. Edit should not break any existing functionality.
+- If any code involves an API key, include the actual API key in your response. If database rules need to be updated, give me the complete revised set of rules.
 - Make no assumptions. If you aren't certain about something, ask.
+- Clearly specify the name of the affected file and the exact path where it is located to ensure error-free integration and efficient code management.
+
+==================
 
 In the login screen, can you edit the "App Store Review Access" to enable reviewers to log in with just email/password? I enabled email/password login in firebase and added this as a user
 
@@ -12,7 +27,6 @@ Email: scouttestreview@gmail.com
 Password: scout^^^test^^^review
 
 Please ensure that a corresponding user document is made for them where their userName is @appstorereview and their emoji is 🧑‍💻
-
 
 Norfolk: 36.8508, -76.2859
 San Diego: 32.7157, -117.1611
@@ -23,21 +37,36 @@ Japan (Tokyo): 35.6762, 139.6503
 Hawaii (Honolulu): 21.3069, -157.8583
 National Capital Region (Washington D.C.): 38.9072, -77.0369
 
-
 ==
 
-
-Hello, I couldn't find the "Reply" button in my thread with App Review, so I've pasted my message below. It's in response to a few issues with my app submission. I've since resubmitted and am awaiting review. Thanks!
-
-Guideline 2.1 - Information Needed
-I've enabled email/password sign-in, so we no longer go through Google. The credentials below should work now:
-Username: scouttestreview@gmail.com
-Password: scout^^^test^^^review
-
-And I apologize for the delay; I had drafted responses for 2.33 and 4.8 but hadn't submitted them. It seems like 2.33 is good, but I'll paste what I had typed for both.
+We've resubmitted 1.0.2 for review. Please see our responses below. Thanks for your cooperation!
 
 Guideline 2.3.3 - Performance - Accurate Metadata
-I've added a few more screenshots to demonstrate the app's functionality. The app is relatively simple, as it is primarily an anonymous feed.
+
+The app is simple, as it's primarily an anonymous feed, but I've added more screenshots to demonstrate the app's full functionality.
+
+Guideline 2.3.10 - Performance - Accurate Metadata
+
+I apologize for the debug banners. The new screenshots do not have them.
+
+Guideline 5.1.1 - Legal - Privacy - Data Collection and Storage
+
+Scuttle doesn't directly handle sensitive military data or verification. We use ID.me, a trusted third-party service, to manage military status verification entirely outside our app. We only receive a verification token from ID.me, not sensitive military information. Firebase securely manages user accounts for verified service members, with no connection to their military records. For these reasons, we didn't believe Scuttle required organizational enrollment in the Apple Developer Program.
 
 Guideline 4.8 - Design - Login Services
-Since Scuttle is exclusively for service members, it uses ID.me for authentication. I believe this qualifies under Guideline 4.8 as a "government or industry-backed citizen identification system or electronic ID to authenticate users," which should exempt us from the requirement to provide Sign in with Apple. App Store reviewers have a temporary "App Store Review Access" button in build 1.0.2, using login credentials. This button will not be present in the production build (1.0.1), which will only offer ID.me login.
+
+Since Scuttle is exclusively for verified service members, our only option is to use ID.me for authentication. ID.me is widely used by numerous government agencies and organizations for military and veteran verification. As a Navy veteran, I personally use it to log into VA services. It's the only commercial secure method available to verify military status. We believe this qualifies under Guideline 4.8 as a "government or industry-backed citizen identification system or electronic ID to authenticate users," which should exempt us from the requirement to provide Sign in with Apple. If it doesn't, we'd appreciate any alternative solutions you might suggest.
+
+The "App Store Review Access" button in build 1.0.2 is temporary for review purposes and will not be in the production build.
+
+From Nate:
+Sign in with Apple
+Basic features
+Then id.me auth and full access
+
+
+
+
+
+
+

@@ -29,14 +29,16 @@ class _LoginScreenState extends State<LoginScreen> {
     print("Starting ID.me sign-in process");
     const String clientId = '0d399b555eb4574e6b761b7d2c103662';
     const String redirectUri = 'com.park.scuttle://callback';
-    const String authorizationEndpoint = 'https://api.id.me/oauth/authorize';
-
     final String codeVerifier = _generateRandomString(128);
     final List<int> bytes = utf8.encode(codeVerifier);
     final Digest digest = sha256.convert(bytes);
     final String codeChallenge =
         base64Url.encode(digest.bytes).replaceAll('=', '');
 
+    const String authorizationEndpoint = 'https://api.id.me/oauth/authorize';
+    const String tokenEndpoint = 'https://api.id.me/oauth/token';
+
+    // And keep the authorization URL simple
     final String authorizationUrl = '$authorizationEndpoint'
         '?client_id=$clientId'
         '&redirect_uri=${Uri.encodeComponent(redirectUri)}'
@@ -51,7 +53,15 @@ class _LoginScreenState extends State<LoginScreen> {
       print("Authorization URL: $authorizationUrl");
 
       final result = await FlutterWebAuth.authenticate(
-          url: authorizationUrl, callbackUrlScheme: "com.park.scuttle");
+        url: authorizationUrl,
+        callbackUrlScheme: "com.park.scuttle",
+        preferEphemeral: true,
+      ).timeout(
+        Duration(minutes: 5),
+        onTimeout: () {
+          throw TimeoutException('Authentication timed out');
+        },
+      );
 
       print("Received result from FlutterWebAuth: $result");
 
@@ -63,7 +73,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (error != null) {
         print("Error returned from ID.me: $error");
         print("Error description: $errorDescription");
-        throw Exception('Error during ID.me authorization: $error');
+        throw Exception('Error during ID.me authorization: $errorDescription');
       }
 
       if (code == null) {
@@ -76,7 +86,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
       print("Exchanging authorization code for access token");
       final tokenResponse = await http.post(
-        Uri.parse('https://api.id.me/oauth/token'),
+        Uri.parse(tokenEndpoint),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
         body: {
           'code': code,
           'client_id': clientId,
@@ -84,6 +98,11 @@ class _LoginScreenState extends State<LoginScreen> {
           'redirect_uri': redirectUri,
           'grant_type': 'authorization_code',
           'code_verifier': codeVerifier,
+        },
+      ).timeout(
+        Duration(seconds: 30),
+        onTimeout: () {
+          throw TimeoutException('Token exchange timed out');
         },
       );
 
@@ -98,17 +117,27 @@ class _LoginScreenState extends State<LoginScreen> {
         print("Calling Firebase Function");
         final callable =
             FirebaseFunctions.instance.httpsCallable('createFirebaseToken');
-        final result = await callable.call({'idmeToken': accessToken});
+        final result = await callable.call({'idmeToken': accessToken}).timeout(
+          Duration(seconds: 30),
+          onTimeout: () {
+            throw TimeoutException('Firebase function timed out');
+          },
+        );
 
         print("Firebase Function result: ${result.data}");
 
         final customToken = result.data['customToken'];
+        if (customToken == null) {
+          throw Exception('No custom token returned from Firebase');
+        }
 
         print("Firebase custom token obtained");
         final userCredential =
             await FirebaseAuth.instance.signInWithCustomToken(customToken);
 
         print("Signed in to Firebase successfully");
+        if (!mounted) return null;
+
         await Provider.of<AppState>(context, listen: false)
             .setIdMeVerified(true);
 
@@ -117,46 +146,46 @@ class _LoginScreenState extends State<LoginScreen> {
         print(
             "Failed to obtain access token. Status code: ${tokenResponse.statusCode}");
         print("Response body: ${tokenResponse.body}");
-        throw Exception('Failed to obtain access token');
+        throw Exception('Failed to obtain access token: ${tokenResponse.body}');
       }
     } catch (e) {
       print("Error during ID.me sign-in: $e");
-      if (e is FirebaseFunctionsException) {
-        print("Firebase Functions Exception: ${e.code} - ${e.message}");
-        print("Firebase Functions Exception details: ${e.details}");
-        if (e.code == 'permission-denied') {
-          if (e.message!.contains('not verified by ID.me')) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                  content: Text(
-                      'Your ID.me account is not verified. Please verify your account with ID.me and try again.')),
-            );
-          } else if (e.message!.contains('does not have military status')) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                  content: Text(
-                      'You must have a verified military status with ID.me to use this app.')),
-            );
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                  content: Text(
-                      'You do not have permission to use this app. Please ensure you have a verified military status with ID.me.')),
-            );
-          }
-        } else {
+      if (e is TimeoutException) {
+        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-                content:
-                    Text('An error occurred during sign-in: ${e.message}')),
+                content: Text('The operation timed out. Please try again.')),
+          );
+        }
+      } else if (e is FirebaseFunctionsException) {
+        print("Firebase Functions Exception: ${e.code} - ${e.message}");
+        print("Firebase Functions Exception details: ${e.details}");
+        if (mounted) {
+          String message;
+          if (e.code == 'permission-denied') {
+            if (e.message!.contains('not verified by ID.me')) {
+              message =
+                  'Your ID.me account is not verified. Please verify your account with ID.me and try again.';
+            } else if (e.message!.contains('does not have military status')) {
+              message =
+                  'You must have a verified military status with ID.me to use this app.';
+            } else {
+              message =
+                  'You do not have permission to use this app. Please ensure you have a verified military status with ID.me.';
+            }
+          } else {
+            message = 'An error occurred during sign-in: ${e.message}';
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message)),
           );
         }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(
-                  'An unexpected error occurred during sign-in. Please try again.')),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('An error occurred: ${e.toString()}')),
+          );
+        }
       }
       return null;
     }
@@ -172,6 +201,11 @@ class _LoginScreenState extends State<LoginScreen> {
       return userCredential;
     } catch (e) {
       print('Error during email/password sign in: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Login failed: ${e.toString()}')),
+        );
+      }
       return null;
     }
   }
@@ -217,7 +251,7 @@ class _LoginScreenState extends State<LoginScreen> {
       print('Error during sign in: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to sign in: $e')),
+          SnackBar(content: Text('Failed to sign in: ${e.toString()}')),
         );
       }
     } finally {
