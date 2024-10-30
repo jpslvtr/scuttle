@@ -20,6 +20,7 @@ class AppState extends ChangeNotifier {
   bool isNewUser = true;
   bool isLocationPermissionChecked = false;
   bool isIdMeVerified = false;
+  bool isTestMode = true;
 
   static const Map<String, Map<String, dynamic>> zones = {
     // 'Sample Zone': {

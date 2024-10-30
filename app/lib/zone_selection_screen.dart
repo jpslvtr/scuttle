@@ -18,6 +18,7 @@ class ZoneSelectionScreen extends StatefulWidget {
 
 class _ZoneSelectionScreenState extends State<ZoneSelectionScreen> {
   String? _recommendedZone;
+  String? _selectedZone; // Add this line
   bool _isLoading = false;
   bool _isLocationDenied = false;
 
@@ -36,7 +37,9 @@ class _ZoneSelectionScreenState extends State<ZoneSelectionScreen> {
       await appState.initializeUser(user.uid);
     }
 
-    await _checkAndRequestLocationPermission();
+    if (!appState.isTestMode) {
+      await _checkAndRequestLocationPermission();
+    }
 
     setState(() => _isLoading = false);
   }
@@ -73,6 +76,7 @@ class _ZoneSelectionScreenState extends State<ZoneSelectionScreen> {
       String? recommendedZone = appState.getRecommendedZone();
       setState(() {
         _recommendedZone = recommendedZone;
+        _selectedZone = recommendedZone; // Add this line
         _isLocationDenied = false;
       });
     } catch (e) {
@@ -107,30 +111,46 @@ class _ZoneSelectionScreenState extends State<ZoneSelectionScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       SizedBox(height: 20),
-                      if (_isLocationDenied)
-                        _buildLocationDeniedWidget()
-                      else if (_recommendedZone != null)
+                      if (!appState.isTestMode)
+                        if (_isLocationDenied)
+                          _buildLocationDeniedWidget()
+                        else if (_recommendedZone != null)
+                          Text(
+                            'Recommended zone based on your location: $_recommendedZone',
+                            style: TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.bold),
+                          )
+                        else
+                          _buildNoZoneWidget(),
+                      if (appState.isTestMode)
                         Text(
-                          'Recommended zone based on your location: $_recommendedZone',
+                          'Test Mode: Select any zone',
                           style: TextStyle(
                               fontSize: 18, fontWeight: FontWeight.bold),
-                        )
-                      else
-                        _buildNoZoneWidget(),
+                        ),
                       SizedBox(height: 24),
                       Expanded(
                         child: ListView(
                           children: AppState.zones.keys.map((zone) {
                             bool isRecommended = zone == _recommendedZone;
-                            bool isEnabled = _recommendedZone != null;
+                            bool isSelected = zone == _selectedZone;
+                            bool isEnabled =
+                                appState.isTestMode || _recommendedZone != null;
                             return ListTile(
                               title: Text(zone),
                               enabled: isEnabled,
-                              selected: isRecommended,
-                              tileColor: isRecommended
+                              selected: isSelected,
+                              tileColor: isSelected
                                   ? Colors.blue.withOpacity(0.1)
                                   : null,
                               textColor: isEnabled ? null : Colors.grey,
+                              onTap: isEnabled
+                                  ? () {
+                                      setState(() {
+                                        _selectedZone = zone;
+                                      });
+                                    }
+                                  : null,
                             );
                           }).toList(),
                         ),
@@ -141,8 +161,8 @@ class _ZoneSelectionScreenState extends State<ZoneSelectionScreen> {
                           child: Text(
                               widget.isInitialSetup ? 'Proceed' : 'Confirm'),
                           onPressed: () async {
-                            if (!_isLocationDenied) {
-                              await appState.setUserCommand(_recommendedZone);
+                            if (!_isLocationDenied || appState.isTestMode) {
+                              await appState.setUserCommand(_selectedZone);
                             }
                             await _setZoneAcknowledged();
                             if (widget.isInitialSetup) {

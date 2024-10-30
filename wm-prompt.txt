@@ -4,6 +4,8 @@ My app Scuttle is an anonymous feed-based platform for service members to engage
 
 Ask:
 
+Could you tell me how to set a boolean flag such that when I'm testing, I can set my zone to whatever zone I want whenever I go to Settings -> Set Zone? Not dependent on my actual location. Basically let any zone be selectable whenever I set this boolean to true.
+
 I use cloud firebase functions for authentication with id.me. But can you look for other places in my code that I could use cloud firebase functions that would improve the ux? Most actions in the app trigger a refresh and it would be nice if there was no refresh. Some examples:
 - upvoting/downvoting a comment, deleting a comment you left in a post's post details page
 - saving a post in the feed
