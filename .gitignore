@@ -67,3 +67,19 @@ node_modules/
 
 # dataconnect generated files
 .dataconnect
+
+wm.txt
+
+wm-prompt.txt
+
+wm-idme.txt
+
+wm-appstore.txt
+
+repopack-output.txt
+
+wm-scripts/repopack.sh
+
+wm-scripts/screenshots
+
+analysis_defaults
