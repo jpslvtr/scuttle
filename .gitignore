@@ -1,3 +1,9 @@
+# macOS
+.DS_Store
+
+# Flutter generated (not source)
+app/.flutter-plugins-dependencies
+
 # Logs
 logs
 *.log
