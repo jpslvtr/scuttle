@@ -28,6 +28,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<UserCredential?> signInWithIdMe() async {
     print("Starting ID.me sign-in process");
     const String clientId = '0d399b555eb4574e6b761b7d2c103662';
+    const String clientSecret = String.fromEnvironment('IDME_CLIENT_SECRET');
     const String redirectUri = 'com.park.scuttle://callback';
     final String codeVerifier = _generateRandomString(128);
     final List<int> bytes = utf8.encode(codeVerifier);
@@ -94,7 +95,7 @@ class _LoginScreenState extends State<LoginScreen> {
         body: {
           'code': code,
           'client_id': clientId,
-          'client_secret': 'ca870bd28dbb2d711cc7cef8dc267127',
+          'client_secret': clientSecret,
           'redirect_uri': redirectUri,
           'grant_type': 'authorization_code',
           'code_verifier': codeVerifier,
